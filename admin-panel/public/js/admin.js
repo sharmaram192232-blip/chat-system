@@ -1,8 +1,9 @@
-// Admin Panel JavaScript - STABLE VERSION
+// Admin Panel JavaScript - FIXED VERSION
 const socket = io('https://chat-system-mryx.onrender.com');
 let currentAgent = null;
 let currentUser = null;
 let token = null;
+let users = []; // Store users globally
 
 // DOM Elements
 const loginContainer = document.getElementById('loginContainer');
@@ -90,6 +91,7 @@ logoutBtn.addEventListener('click', () => {
     token = null;
     currentAgent = null;
     currentUser = null;
+    users = [];
     loginContainer.style.display = 'flex';
     adminPanel.style.display = 'none';
     logoutBtn.style.display = 'none';
@@ -106,8 +108,9 @@ async function loadUsers() {
         const response = await fetch('https://chat-system-mryx.onrender.com/api/admin/users');
         const data = await response.json();
         
-        if (data.success) {
-            displayUsers(data.users);
+        if (data.success && data.users) {
+            users = data.users; // Store globally
+            displayUsers(users);
         }
     } catch (error) {
         console.error('Failed to load users:', error);
@@ -115,51 +118,52 @@ async function loadUsers() {
 }
 
 // Display Users in Sidebar
-function displayUsers(users) {
-    userList.innerHTML = '';
-    
-    if (!users || users.length === 0) {
+function displayUsers(usersToShow) {
+    if (!usersToShow || usersToShow.length === 0) {
         userList.innerHTML = '<div style="text-align: center; padding: 20px; color: #999;">No active users</div>';
         return;
     }
     
-    users.forEach(user => {
-        const userDiv = document.createElement('div');
-        userDiv.className = `user-item ${currentUser && currentUser.user_id === user.user_id ? 'active' : ''}`;
-        userDiv.setAttribute('data-user-id', user.user_id);
-        
+    let html = '';
+    usersToShow.forEach(user => {
         const lastActive = new Date(user.last_active);
         const now = new Date();
         const diffMinutes = Math.floor((now - lastActive) / (1000 * 60));
         const isOnline = diffMinutes < 5;
+        const isActive = currentUser && currentUser.user_id === user.user_id;
         
-        userDiv.innerHTML = `
-            <div style="display: flex; align-items: center; gap: 8px;">
-                <span style="
-                    width: 10px;
-                    height: 10px;
-                    border-radius: 50%;
-                    background: ${isOnline ? '#4caf50' : '#9e9e9e'};
-                    display: inline-block;
-                "></span>
-                <span style="font-weight: 600;">${user.name || 'Visitor'}</span>
-                <span style="font-size: 11px; background: ${user.ai_active ? '#4caf50' : '#ff9800'}; color: white; padding: 2px 8px; border-radius: 12px; margin-left: auto;">
-                    ${user.ai_active ? 'AI' : 'Agent'}
-                </span>
+        html += `
+            <div class="user-item ${isActive ? 'active' : ''}" data-user-id="${user.user_id}" onclick="selectUserFromList('${user.user_id}')">
+                <div style="display: flex; align-items: center; gap: 8px; padding: 10px;">
+                    <span style="
+                        width: 10px;
+                        height: 10px;
+                        border-radius: 50%;
+                        background: ${isOnline ? '#4caf50' : '#9e9e9e'};
+                        display: inline-block;
+                    "></span>
+                    <span style="font-weight: 600;">${user.name || 'Visitor'}</span>
+                    <span style="font-size: 11px; background: ${user.ai_active ? '#4caf50' : '#ff9800'}; color: white; padding: 2px 8px; border-radius: 12px; margin-left: auto;">
+                        ${user.ai_active ? 'AI' : 'Agent'}
+                    </span>
+                </div>
             </div>
         `;
-        
-        userDiv.addEventListener('click', () => selectUser(user));
-        userList.appendChild(userDiv);
     });
+    
+    userList.innerHTML = html;
 }
 
-// Select User to Chat
-async function selectUser(user) {
+// Global function to select user (needed for onclick)
+window.selectUserFromList = async function(userId) {
+    const user = users.find(u => u.user_id === userId);
+    if (!user) return;
+    
     currentUser = user;
     
+    // Update active state
     document.querySelectorAll('.user-item').forEach(el => el.classList.remove('active'));
-    event.currentTarget.classList.add('active');
+    document.querySelector(`[data-user-id="${userId}"]`).classList.add('active');
     
     chatHeader.innerHTML = `<h3>Chat with ${user.name || 'Visitor'}</h3>`;
     chatInputArea.style.display = 'flex';
@@ -176,7 +180,7 @@ async function selectUser(user) {
     } catch (error) {
         console.error('Failed to load messages:', error);
     }
-}
+};
 
 // Send Message
 sendButton.addEventListener('click', sendMessage);
@@ -238,7 +242,7 @@ socket.on('new-message', (data) => {
     if (currentUser && data.userId === currentUser.user_id) {
         displayMessage(data);
     }
-    loadUsers();
+    loadUsers(); // Refresh user list but preserve selection
 });
 
 socket.on('user-online', () => {
@@ -249,5 +253,5 @@ socket.on('disconnect', () => {
     console.log('Disconnected from server');
 });
 
-// Load users every 15 seconds
-setInterval(loadUsers, 15000);
+// Load users every 10 seconds
+setInterval(loadUsers, 10000);
