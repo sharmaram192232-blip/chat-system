@@ -2,64 +2,113 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>Chat Support</title>
-    <link rel="stylesheet" href="css/style.css">
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body, html { height: 100%; width: 100%; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; }
+        
+        .chat-container {
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+            background: white;
+        }
+        
+        .chat-header {
+            background: #0084ff;
+            color: white;
+            padding: 15px 20px;
+            text-align: center;
+            font-size: 18px;
+            font-weight: 600;
+        }
+        
+        .messages {
+            flex: 1;
+            padding: 15px;
+            overflow-y: auto;
+            background: #f0f2f5;
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+        
+        .message {
+            max-width: 80%;
+            padding: 10px 15px;
+            border-radius: 18px;
+            word-wrap: break-word;
+        }
+        
+        .message.user {
+            align-self: flex-end;
+            background: #0084ff;
+            color: white;
+        }
+        
+        .message.ai, .message.agent {
+            align-self: flex-start;
+            background: white;
+            color: #333;
+            box-shadow: 0 1px 2px rgba(0,0,0,0.1);
+        }
+        
+        .input-area {
+            display: flex;
+            padding: 10px;
+            background: white;
+            border-top: 1px solid #ddd;
+            gap: 10px;
+        }
+        
+        .input-area input {
+            flex: 1;
+            padding: 12px;
+            border: 1px solid #ddd;
+            border-radius: 24px;
+            font-size: 16px;
+            outline: none;
+        }
+        
+        .input-area input:focus {
+            border-color: #0084ff;
+        }
+        
+        .input-area button {
+            padding: 12px 20px;
+            background: #0084ff;
+            color: white;
+            border: none;
+            border-radius: 24px;
+            font-size: 16px;
+            cursor: pointer;
+        }
+        
+        .status {
+            font-size: 12px;
+            color: #4caf50;
+            text-align: center;
+            padding: 5px;
+        }
+    </style>
 </head>
 <body>
-    <div class="chat-fullscreen">
-        <!-- Chat Interface - Shows Immediately -->
-        <div class="chat-interface" id="chatInterface">
-            <div class="chat-header">
-                <div class="header-info">
-                    <h3>Customer Support</h3>
-                    <span class="ai-badge" id="aiBadge">AI Assistant</span>
-                </div>
-                <div class="header-status">
-                    <span class="status-dot" id="statusDot"></span>
-                    <span id="statusText">Online</span>
-                </div>
-            </div>
-
-            <div class="messages-container" id="messagesContainer">
-                <!-- Welcome message will be inserted here -->
-            </div>
-
-            <div class="typing-indicator" id="typingIndicator" style="display: none;">
-                <span></span><span></span><span></span>
-                <span class="typing-text">Agent is typing...</span>
-            </div>
-
-            <div class="chat-input-container">
-                <textarea 
-                    id="messageInput" 
-                    placeholder="Type your message..." 
-                    rows="1"
-                    autofocus
-                ></textarea>
-                <button id="sendButton">
-                    <svg viewBox="0 0 24 24" width="24" height="24">
-                        <path fill="currentColor" d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z"/>
-                    </svg>
-                </button>
-            </div>
+    <div class="chat-container">
+        <div class="chat-header">
+            Customer Support
+            <div class="status" id="status">Connecting...</div>
+        </div>
+        
+        <div class="messages" id="messages"></div>
+        
+        <div class="input-area">
+            <input type="text" id="messageInput" placeholder="Type your message..." disabled>
+            <button id="sendButton" disabled>Send</button>
         </div>
     </div>
 
-    <!-- Optional Name Modal (Appears after 3 messages) -->
-    <div class="name-modal" id="nameModal" style="display: none;">
-        <div class="modal-content">
-            <h3>👋 Before you go</h3>
-            <p>May we know your name?</p>
-            <input type="text" id="userNameInput" placeholder="Enter your name (optional)">
-            <div class="modal-buttons">
-                <button id="saveNameBtn">Save</button>
-                <button id="skipNameBtn">Skip</button>
-            </div>
-        </div>
-    </div>
-
-    <script src="/socket.io/socket.io.js"></script>
-    <script src="js/chat.js"></script>
+    <script src="https://cdn.socket.io/4.5.4/socket.io.min.js"></script>
+    <script src="chat.js"></script>
 </body>
 </html>
