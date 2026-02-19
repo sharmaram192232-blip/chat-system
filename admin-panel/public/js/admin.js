@@ -4,6 +4,7 @@ let currentAgent = null;
 let currentUser = null;
 let token = null;
 let typingTimeout = null;
+let reconnectAttempts = 0;
 
 // DOM Elements
 const loginContainer = document.getElementById('loginContainer');
@@ -19,6 +20,39 @@ const agentInfo = document.getElementById('agentInfo');
 const logoutBtn = document.getElementById('logoutBtn');
 const onlineCount = document.getElementById('onlineCount');
 
+// Check for saved session on load
+document.addEventListener('DOMContentLoaded', () => {
+    const savedToken = localStorage.getItem('adminToken');
+    const savedAgent = localStorage.getItem('adminAgent');
+    
+    if (savedToken && savedAgent) {
+        token = savedToken;
+        currentAgent = JSON.parse(savedAgent);
+        
+        // Show admin panel
+        loginContainer.style.display = 'none';
+        adminPanel.style.display = 'flex';
+        logoutBtn.style.display = 'block';
+        agentInfo.textContent = `Logged in as: ${currentAgent.name}`;
+        
+        // Connect to socket
+        socket.emit('admin-connect', { token });
+        
+        // Load users immediately
+        loadUsers();
+        
+        // Load last selected user if any
+        const lastUserId = localStorage.getItem('lastSelectedUser');
+        if (lastUserId) {
+            // Find and select that user after users load
+            setTimeout(() => {
+                const userElement = document.querySelector(`[data-user-id="${lastUserId}"]`);
+                if (userElement) userElement.click();
+            }, 1000);
+        }
+    }
+});
+
 // Login Form Submit
 loginForm.addEventListener('submit', async (e) => {
     e.preventDefault();
@@ -27,7 +61,6 @@ loginForm.addEventListener('submit', async (e) => {
     const password = document.getElementById('password').value;
     const loginButton = document.querySelector('.login-box button');
     
-    // Show loading state
     loginButton.textContent = 'Logging in...';
     loginButton.disabled = true;
     
@@ -44,20 +77,18 @@ loginForm.addEventListener('submit', async (e) => {
             token = data.token;
             currentAgent = data.agent;
             
-            // Hide login, show admin panel
+            // Save to localStorage
+            localStorage.setItem('adminToken', token);
+            localStorage.setItem('adminAgent', JSON.stringify(currentAgent));
+            
             loginContainer.style.display = 'none';
             adminPanel.style.display = 'flex';
             logoutBtn.style.display = 'block';
             agentInfo.textContent = `Logged in as: ${data.agent.name}`;
             
-            // Connect to socket
             socket.emit('admin-connect', { token });
-            
-            // Load users
             loadUsers();
-            
-            // Show welcome notification
-            showNotification(`Welcome ${data.agent.name}!`, 'success');
+            showNotification(`Welcome back ${data.agent.name}!`, 'success');
         } else {
             alert('Login failed: ' + data.error);
             loginButton.textContent = 'Login to Dashboard';
@@ -70,9 +101,15 @@ loginForm.addEventListener('submit', async (e) => {
     }
 });
 
-// Logout with confirmation
+// Logout
 logoutBtn.addEventListener('click', () => {
     if (confirm('Are you sure you want to logout?')) {
+        // Clear localStorage
+        localStorage.removeItem('adminToken');
+        localStorage.removeItem('adminAgent');
+        localStorage.removeItem('lastSelectedUser');
+        localStorage.removeItem('cachedUsers');
+        
         token = null;
         currentAgent = null;
         currentUser = null;
@@ -80,7 +117,6 @@ logoutBtn.addEventListener('click', () => {
         adminPanel.style.display = 'none';
         logoutBtn.style.display = 'none';
         
-        // Clear user list
         userList.innerHTML = '';
         messagesContainer.innerHTML = '';
         chatHeader.innerHTML = '<h3>Select a user to start chatting</h3>';
@@ -88,18 +124,56 @@ logoutBtn.addEventListener('click', () => {
     }
 });
 
-// Load Users
-async function loadUsers() {
+// Load Users with persistence
+async function loadUsers(showCache = true) {
+    // Try to show cached users first for instant display
+    if (showCache) {
+        const cachedUsers = localStorage.getItem('cachedUsers');
+        if (cachedUsers) {
+            try {
+                const users = JSON.parse(cachedUsers);
+                displayUsers(users);
+                console.log('Showing cached users');
+            } catch (e) {
+                console.log('Cache error:', e);
+            }
+        }
+    }
+    
     try {
         const response = await fetch('https://chat-system-mryx.onrender.com/api/admin/users');
         const data = await response.json();
         
         if (data.success) {
+            // Save to cache
+            localStorage.setItem('cachedUsers', JSON.stringify(data.users));
+            localStorage.setItem('lastUserLoad', Date.now().toString());
+            
             displayUsers(data.users);
             updateOnlineCount(data.users);
+            
+            // Reset reconnect attempts on successful load
+            reconnectAttempts = 0;
         }
     } catch (error) {
         console.error('Failed to load users:', error);
+        reconnectAttempts++;
+        
+        // Show retry message if failed multiple times
+        if (reconnectAttempts > 3) {
+            const retryDiv = document.createElement('div');
+            retryDiv.className = 'retry-message';
+            retryDiv.innerHTML = `
+                <div style="text-align: center; padding: 20px; color: #f44336;">
+                    ⚠️ Connection lost. 
+                    <button onclick="location.reload()" style="padding: 8px 16px; margin-left: 10px; background: #0084ff; color: white; border: none; border-radius: 4px; cursor: pointer;">
+                        Reconnect
+                    </button>
+                </div>
+            `;
+            userList.innerHTML = '';
+            userList.appendChild(retryDiv);
+        }
     }
 }
 
@@ -113,7 +187,7 @@ function updateOnlineCount(users) {
         return lastActive > fiveMinutesAgo;
     }).length;
     
-    onlineCount.textContent = `${online} online`;
+    onlineCount.textContent = `${online} online | ${users.length} total`;
 }
 
 // Display Users in Sidebar
@@ -140,8 +214,6 @@ function displayUsers(users) {
         else timeAgo = `${Math.floor(diffMinutes / 60)}h ago`;
         
         const isOnline = diffMinutes < 5;
-        
-        // Check if user has unread messages (sent after last viewed by agent)
         const hasUnread = user.unread_count > 0;
         
         userDiv.innerHTML = `
@@ -171,11 +243,24 @@ function displayUsers(users) {
         userDiv.addEventListener('click', () => selectUser(user));
         userList.appendChild(userDiv);
     });
+    
+    // If no users, show empty state
+    if (users.length === 0) {
+        const emptyDiv = document.createElement('div');
+        emptyDiv.style.textAlign = 'center';
+        emptyDiv.style.padding = '40px 20px';
+        emptyDiv.style.color = '#999';
+        emptyDiv.innerHTML = '👥 No users yet<br><small>Waiting for someone to start a chat...</small>';
+        userList.appendChild(emptyDiv);
+    }
 }
 
 // Select User to Chat
 async function selectUser(user) {
     currentUser = user;
+    
+    // Save last selected user
+    localStorage.setItem('lastSelectedUser', user.user_id);
     
     // Update UI
     document.querySelectorAll('.user-item').forEach(el => el.classList.remove('active'));
@@ -192,14 +277,27 @@ async function selectUser(user) {
     chatInputArea.style.display = 'flex';
     messageInput.focus();
     
-    // Load Messages
+    // Try to load from cache first for instant display
+    const cachedMessages = localStorage.getItem(`messages_${user.user_id}`);
+    if (cachedMessages) {
+        try {
+            messagesContainer.innerHTML = '';
+            const msgs = JSON.parse(cachedMessages);
+            msgs.forEach(msg => displayMessage(msg, false));
+        } catch (e) {}
+    }
+    
+    // Load fresh messages from server
     try {
         const response = await fetch(`https://chat-system-mryx.onrender.com/api/admin/user/${user.user_id}`);
         const data = await response.json();
         
         if (data.success) {
             messagesContainer.innerHTML = '';
-            data.messages.forEach(msg => displayMessage(msg));
+            data.messages.forEach(msg => displayMessage(msg, true));
+            
+            // Cache messages
+            localStorage.setItem(`messages_${user.user_id}`, JSON.stringify(data.messages));
         }
     } catch (error) {
         console.error('Failed to load messages:', error);
@@ -223,10 +321,8 @@ messageInput.addEventListener('input', () => {
             senderType: 'agent'
         });
         
-        // Clear previous timeout
         if (typingTimeout) clearTimeout(typingTimeout);
         
-        // Set timeout to stop typing after 2 seconds of no input
         typingTimeout = setTimeout(() => {
             socket.emit('typing', {
                 userId: currentUser.user_id,
@@ -243,14 +339,12 @@ function sendMessage() {
     
     messageInput.value = '';
     
-    // Stop typing indicator
     socket.emit('typing', {
         userId: currentUser.user_id,
         isTyping: false,
         senderType: 'agent'
     });
     
-    // Send to server
     socket.emit('agent-message', {
         userId: currentUser.user_id,
         message,
@@ -258,20 +352,16 @@ function sendMessage() {
         agentId: currentAgent.id
     });
     
-    // Display in admin panel
     displayMessage({
         message,
         senderType: 'agent',
         agentName: currentAgent.name,
         timestamp: new Date()
-    });
-    
-    // Play send sound (optional)
-    // playSound('send');
+    }, true);
 }
 
 // Display Message
-function displayMessage(data) {
+function displayMessage(data, saveToCache = true) {
     const messageDiv = document.createElement('div');
     messageDiv.className = `message ${data.senderType}`;
     
@@ -298,13 +388,13 @@ function displayMessage(data) {
     messagesContainer.appendChild(messageDiv);
     messagesContainer.scrollTop = messagesContainer.scrollHeight;
     
-    // Play notification sound for new messages
+    // Play sound for new user messages
     if (data.senderType === 'user' && document.hidden) {
         playNotificationSound();
     }
 }
 
-// Escape HTML to prevent XSS
+// Escape HTML
 function escapeHtml(text) {
     const div = document.createElement('div');
     div.textContent = text;
@@ -315,116 +405,95 @@ function escapeHtml(text) {
 function playNotificationSound() {
     const audio = new Audio('https://www.soundjay.com/misc/sounds/bell-ringing-05.mp3');
     audio.volume = 0.3;
-    audio.play().catch(e => console.log('Audio playback failed:', e));
+    audio.play().catch(e => console.log('Audio error:', e));
 }
 
-// Show browser notification
+// Show notification
 function showNotification(message, type = 'info') {
     if (Notification.permission === 'granted') {
         new Notification('Chat System', { body: message });
     } else if (Notification.permission !== 'denied') {
         Notification.requestPermission();
     }
-    
-    // Update page title for unread messages
-    if (type === 'message') {
-        document.title = '🔔 New Message - Admin Panel';
-        setTimeout(() => {
-            document.title = 'Admin Panel - Chat System';
-        }, 5000);
-    }
 }
 
 // Socket Events
 socket.on('connect', () => {
     console.log('Connected to server');
+    reconnectAttempts = 0;
     if (token) {
         socket.emit('admin-connect', { token });
+        loadUsers(); // Force load on reconnect
     }
 });
 
 socket.on('new-message', (data) => {
-    // Play notification
     if (data.senderType === 'user') {
         playNotificationSound();
         showNotification(`New message from ${data.userName || 'a user'}`, 'message');
     }
     
     if (currentUser && data.userId === currentUser.user_id) {
-        displayMessage(data);
+        displayMessage(data, true);
+        
+        // Update cache
+        const cached = localStorage.getItem(`messages_${currentUser.user_id}`);
+        if (cached) {
+            try {
+                const msgs = JSON.parse(cached);
+                msgs.push(data);
+                localStorage.setItem(`messages_${currentUser.user_id}`, JSON.stringify(msgs));
+            } catch (e) {}
+        }
     }
-    loadUsers(); // Refresh user list
+    loadUsers(false); // Refresh user list without showing cache first
 });
 
 socket.on('user-typing', (data) => {
     if (currentUser && data.userId === currentUser.user_id) {
-        // Show typing indicator in header or chat area
-        const typingDiv = document.getElementById('typingIndicator');
-        if (typingDiv) {
-            typingDiv.style.display = data.isTyping ? 'block' : 'none';
-            if (data.isTyping) {
-                typingDiv.innerHTML = '<em>User is typing...</em>';
-            }
+        let typingDiv = document.getElementById('userTypingIndicator');
+        if (!typingDiv) {
+            typingDiv = document.createElement('div');
+            typingDiv.id = 'userTypingIndicator';
+            typingDiv.style.padding = '5px 20px';
+            typingDiv.style.fontStyle = 'italic';
+            typingDiv.style.color = '#666';
+            messagesContainer.parentNode.insertBefore(typingDiv, messagesContainer.nextSibling);
         }
-    }
-});
-
-socket.on('user-online', (data) => {
-    loadUsers();
-    // Update user list to show online status
-    const userElement = document.querySelector(`[data-user-id="${data.userId}"]`);
-    if (userElement) {
-        const statusDot = userElement.querySelector('.status-indicator');
-        if (statusDot) {
-            statusDot.style.background = '#4caf50';
-        }
-    }
-});
-
-socket.on('user-offline', (data) => {
-    loadUsers();
-    const userElement = document.querySelector(`[data-user-id="${data.userId}"]`);
-    if (userElement) {
-        const statusDot = userElement.querySelector('.status-indicator');
-        if (statusDot) {
-            statusDot.style.background = '#9e9e9e';
+        typingDiv.style.display = data.isTyping ? 'block' : 'none';
+        if (data.isTyping) {
+            typingDiv.innerHTML = '👤 User is typing...';
         }
     }
 });
 
 socket.on('disconnect', () => {
     console.log('Disconnected from server');
-    showNotification('Disconnected from server', 'error');
+    showNotification('Disconnected from server. Trying to reconnect...', 'error');
+    
+    // Try to reconnect every 5 seconds
+    setTimeout(() => {
+        if (!socket.connected) {
+            location.reload();
+        }
+    }, 30000);
 });
 
-// Load users every 15 seconds
-setInterval(loadUsers, 15000);
+// Load users every 10 seconds (more frequent)
+setInterval(() => loadUsers(false), 10000);
 
-// Request notification permission on load
+// Request notification permission
 if (Notification.permission === 'default') {
     Notification.requestPermission();
 }
 
-// Add typing indicator to HTML (if not present)
-document.addEventListener('DOMContentLoaded', () => {
-    if (!document.getElementById('typingIndicator')) {
-        const typingDiv = document.createElement('div');
-        typingDiv.id = 'typingIndicator';
-        typingDiv.style.display = 'none';
-        typingDiv.style.padding = '5px 20px';
-        typingDiv.style.fontStyle = 'italic';
-        typingDiv.style.color = '#666';
-        messagesContainer.parentNode.insertBefore(typingDiv, messagesContainer.nextSibling);
-    }
-    
-    // Add online count display to header if not present
-    const header = document.querySelector('.sidebar-header');
-    if (header && !document.getElementById('onlineCount')) {
-        const countDiv = document.createElement('div');
-        countDiv.id = 'onlineCount';
-        countDiv.style.fontSize = '12px';
-        countDiv.style.color = '#4caf50';
-        countDiv.style.marginTop = '5px';
-        header.appendChild(countDiv);
+// Add reconnect button on page visibility change
+document.addEventListener('visibilitychange', () => {
+    if (!document.hidden) {
+        // Page became visible, refresh data
+        loadUsers(false);
+        if (currentUser) {
+            selectUser(currentUser);
+        }
     }
 });
