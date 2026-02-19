@@ -24,7 +24,13 @@
             font-weight: 600;
         }
         
-        .messages {
+        #status {
+            font-size: 12px;
+            color: #4caf50;
+            margin-top: 5px;
+        }
+        
+        #messagesContainer {
             flex: 1;
             padding: 15px;
             overflow-y: auto;
@@ -62,7 +68,7 @@
             gap: 10px;
         }
         
-        .input-area input {
+        #messageInput {
             flex: 1;
             padding: 12px;
             border: 1px solid #ddd;
@@ -71,11 +77,11 @@
             outline: none;
         }
         
-        .input-area input:focus {
+        #messageInput:focus {
             border-color: #0084ff;
         }
         
-        .input-area button {
+        #sendButton {
             padding: 12px 20px;
             background: #0084ff;
             color: white;
@@ -85,11 +91,9 @@
             cursor: pointer;
         }
         
-        .status {
-            font-size: 12px;
-            color: #4caf50;
-            text-align: center;
-            padding: 5px;
+        #sendButton:disabled, #messageInput:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
         }
     </style>
 </head>
@@ -97,10 +101,10 @@
     <div class="chat-container">
         <div class="chat-header">
             Customer Support
-            <div class="status" id="status">Connecting...</div>
+            <div id="status">Connecting...</div>
         </div>
         
-        <div class="messages" id="messages"></div>
+        <div id="messagesContainer"></div>
         
         <div class="input-area">
             <input type="text" id="messageInput" placeholder="Type your message..." disabled>
