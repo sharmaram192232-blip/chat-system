@@ -1,10 +1,24 @@
+// Admin Panel JavaScript
 const socket = io('https://chat-system-mryx.onrender.com');
 let currentAgent = null;
 let currentUser = null;
 let token = null;
 
-// Login form
-document.getElementById('loginForm').addEventListener('submit', async (e) => {
+// DOM Elements
+const loginContainer = document.getElementById('loginContainer');
+const adminPanel = document.getElementById('adminPanel');
+const loginForm = document.getElementById('loginForm');
+const userList = document.getElementById('userList');
+const messagesContainer = document.getElementById('messagesContainer');
+const chatHeader = document.getElementById('chatHeader');
+const chatInputArea = document.getElementById('chatInputArea');
+const messageInput = document.getElementById('messageInput');
+const sendButton = document.getElementById('sendButton');
+const agentInfo = document.getElementById('agentInfo');
+const logoutBtn = document.getElementById('logoutBtn');
+
+// Login Form Submit
+loginForm.addEventListener('submit', async (e) => {
     e.preventDefault();
     
     const username = document.getElementById('username').value;
@@ -24,9 +38,10 @@ document.getElementById('loginForm').addEventListener('submit', async (e) => {
             currentAgent = data.agent;
             
             // Hide login, show admin panel
-            document.getElementById('loginContainer').style.display = 'none';
-            document.getElementById('adminPanel').style.display = 'flex';
-            document.getElementById('agentName').textContent = `Logged in as: ${data.agent.name}`;
+            loginContainer.style.display = 'none';
+            adminPanel.style.display = 'flex';
+            logoutBtn.style.display = 'block';
+            agentInfo.textContent = `Logged in as: ${data.agent.name}`;
             
             // Connect to socket
             socket.emit('admin-connect', { token });
@@ -34,14 +49,24 @@ document.getElementById('loginForm').addEventListener('submit', async (e) => {
             // Load users
             loadUsers();
         } else {
-            alert('Login failed');
+            alert('Login failed: ' + data.error);
         }
     } catch (error) {
-        alert('Login error');
+        alert('Login error. Please try again.');
     }
 });
 
-// Load users
+// Logout
+logoutBtn.addEventListener('click', () => {
+    token = null;
+    currentAgent = null;
+    currentUser = null;
+    loginContainer.style.display = 'flex';
+    adminPanel.style.display = 'none';
+    logoutBtn.style.display = 'none';
+});
+
+// Load Users
 async function loadUsers() {
     try {
         const response = await fetch('https://chat-system-mryx.onrender.com/api/admin/users');
@@ -51,65 +76,72 @@ async function loadUsers() {
             displayUsers(data.users);
         }
     } catch (error) {
-        console.error('Error loading users:', error);
+        console.error('Failed to load users:', error);
     }
 }
 
-// Display users in sidebar
+// Display Users in Sidebar
 function displayUsers(users) {
-    const userList = document.getElementById('userList');
     userList.innerHTML = '';
     
     users.forEach(user => {
         const userDiv = document.createElement('div');
-        userDiv.className = 'user-item';
+        userDiv.className = `user-item ${currentUser && currentUser.user_id === user.user_id ? 'active' : ''}`;
+        
+        const lastActive = new Date(user.last_active).toLocaleTimeString();
+        
         userDiv.innerHTML = `
-            <strong>${user.name || 'Visitor'}</strong><br>
-            <small>${user.status} | ${user.ai_active ? 'AI' : 'Agent'}</small>
+            <div class="user-name">${user.name || 'Visitor'}</div>
+            <div class="user-status">
+                ${user.status} · ${user.ai_active ? 'AI' : 'Agent'} · ${lastActive}
+            </div>
         `;
-        userDiv.onclick = () => selectUser(user);
+        
+        userDiv.addEventListener('click', () => selectUser(user));
         userList.appendChild(userDiv);
     });
 }
 
-// Select user to chat
+// Select User to Chat
 async function selectUser(user) {
     currentUser = user;
     
     // Update UI
     document.querySelectorAll('.user-item').forEach(el => el.classList.remove('active'));
-    event.target.closest('.user-item').classList.add('active');
+    event.currentTarget.classList.add('active');
     
-    document.getElementById('chatHeader').innerHTML = `<h3>Chat with ${user.name || 'Visitor'}</h3>`;
-    document.getElementById('chatInput').style.display = 'flex';
+    chatHeader.innerHTML = `<h3>Chat with ${user.name || 'Visitor'}</h3>`;
+    chatInputArea.style.display = 'flex';
     
-    // Load messages
-    const response = await fetch(`https://chat-system-mryx.onrender.com/api/admin/user/${user.user_id}`);
-    const data = await response.json();
-    
-    if (data.success) {
-        const messagesDiv = document.getElementById('messages');
-        messagesDiv.innerHTML = '';
-        data.messages.forEach(msg => {
-            displayMessage(msg);
-        });
+    // Load Messages
+    try {
+        const response = await fetch(`https://chat-system-mryx.onrender.com/api/admin/user/${user.user_id}`);
+        const data = await response.json();
+        
+        if (data.success) {
+            messagesContainer.innerHTML = '';
+            data.messages.forEach(msg => displayMessage(msg));
+        }
+    } catch (error) {
+        console.error('Failed to load messages:', error);
     }
 }
 
-// Send message
-document.getElementById('sendButton').addEventListener('click', sendMessage);
-document.getElementById('messageInput').addEventListener('keypress', (e) => {
-    if (e.key === 'Enter') sendMessage();
+// Send Message
+sendButton.addEventListener('click', sendMessage);
+messageInput.addEventListener('keypress', (e) => {
+    if (e.key === 'Enter') {
+        sendMessage();
+    }
 });
 
 function sendMessage() {
-    const input = document.getElementById('messageInput');
-    const message = input.value.trim();
-    
+    const message = messageInput.value.trim();
     if (!message || !currentUser || !currentAgent) return;
     
-    input.value = '';
+    messageInput.value = '';
     
+    // Send to server
     socket.emit('agent-message', {
         userId: currentUser.user_id,
         message,
@@ -117,6 +149,7 @@ function sendMessage() {
         agentId: currentAgent.id
     });
     
+    // Display in admin panel
     displayMessage({
         message,
         senderType: 'agent',
@@ -125,37 +158,29 @@ function sendMessage() {
     });
 }
 
-// Display message
+// Display Message
 function displayMessage(data) {
-    const messagesDiv = document.getElementById('messages');
-    const msgDiv = document.createElement('div');
-    msgDiv.style.marginBottom = '10px';
-    msgDiv.style.maxWidth = '70%';
+    const messageDiv = document.createElement('div');
+    messageDiv.className = `message ${data.senderType}`;
     
-    if (data.senderType === 'user') {
-        msgDiv.style.marginLeft = 'auto';
-        msgDiv.style.background = '#667eea';
-        msgDiv.style.color = 'white';
-        msgDiv.style.padding = '10px 15px';
-        msgDiv.style.borderRadius = '15px';
-    } else {
-        msgDiv.style.background = data.senderType === 'agent' ? '#e8f5e8' : '#e3f2fd';
-        msgDiv.style.color = '#333';
-        msgDiv.style.padding = '10px 15px';
-        msgDiv.style.borderRadius = '15px';
-    }
-    
-    let sender = '';
+    let senderInfo = '';
     if (data.senderType === 'agent' && data.agentName) {
-        sender = `<strong>${data.agentName}:</strong> `;
+        senderInfo = `<strong>${data.agentName}:</strong> `;
     }
     
-    msgDiv.innerHTML = sender + data.message;
-    messagesDiv.appendChild(msgDiv);
-    messagesDiv.scrollTop = messagesDiv.scrollHeight;
+    messageDiv.innerHTML = senderInfo + data.message;
+    messagesContainer.appendChild(messageDiv);
+    messagesContainer.scrollTop = messagesContainer.scrollHeight;
 }
 
-// Socket events
+// Socket Events
+socket.on('connect', () => {
+    console.log('Connected to server');
+    if (token) {
+        socket.emit('admin-connect', { token });
+    }
+});
+
 socket.on('new-message', (data) => {
     if (currentUser && data.userId === currentUser.user_id) {
         displayMessage(data);
