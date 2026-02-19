@@ -1,0 +1,88 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Agent Dashboard - Chat System</title>
+    <link rel="stylesheet" href="css/admin.css">
+</head>
+<body>
+    <!-- Login Screen -->
+    <div class="login-container" id="loginContainer">
+        <div class="login-box">
+            <h2>Agent Login</h2>
+            <p class="login-subtitle">Multiple agents can work simultaneously</p>
+            <form id="loginForm">
+                <div class="form-group">
+                    <label for="username">Username</label>
+                    <select id="username" required>
+                        <option value="agent1">Sarah (Support)</option>
+                        <option value="agent2">Mike (Sales)</option>
+                        <option value="agent3">John (Technical)</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label for="password">Password</label>
+                    <input type="password" id="password" value="agent123" required>
+                </div>
+                <button type="submit">Login to Dashboard</button>
+            </form>
+        </div>
+    </div>
+
+    <!-- Main Admin Panel -->
+    <div class="admin-panel" id="adminPanel" style="display: none;">
+        <!-- Sidebar -->
+        <div class="sidebar">
+            <div class="sidebar-header">
+                <div>
+                    <h3>Agent Dashboard</h3>
+                    <div class="agent-info" id="agentInfo"></div>
+                </div>
+                <button class="logout-btn" id="logoutBtn">Logout</button>
+            </div>
+            
+            <div class="agents-status" id="agentsStatus">
+                <h4>Active Agents</h4>
+                <div class="agents-list" id="agentsList"></div>
+            </div>
+
+            <div class="user-list-header">
+                <h4>Active Chats</h4>
+                <span class="online-count" id="onlineCount">0</span>
+            </div>
+            <div class="user-list" id="userList"></div>
+        </div>
+
+        <!-- Chat Area -->
+        <div class="chat-area">
+            <div class="chat-header" id="chatHeader">
+                <div>
+                    <h3>Select a user to start chatting</h3>
+                </div>
+                <div class="chat-controls" id="chatControls" style="display: none;">
+                    <label class="ai-toggle">
+                        <span>AI Mode:</span>
+                        <input type="checkbox" id="aiToggle" checked>
+                    </label>
+                </div>
+            </div>
+
+            <div class="messages-container" id="adminMessages"></div>
+
+            <div class="typing-indicator" id="adminTypingIndicator" style="display: none;">
+                <span></span><span></span><span></span>
+                <span class="typing-text">typing...</span>
+            </div>
+
+            <div class="chat-input-container" id="chatInputArea" style="display: none;">
+                <textarea id="adminMessageInput" placeholder="Type your message..." rows="1"></textarea>
+                <button id="adminSendButton">Send</button>
+            </div>
+        </div>
+    </div>
+
+    <script src="/socket.io/socket.io.js"></script>
+    <script src="js/admin.js"></script>
+</body>
+</html>

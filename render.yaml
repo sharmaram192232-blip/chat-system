@@ -1,0 +1,31 @@
+services:
+  - type: web
+    name: chat-system-backend
+    env: node
+    buildCommand: cd backend && npm install
+    startCommand: cd backend && node server.js
+    envVars:
+      - key: NODE_VERSION
+        value: 18.17.0
+      - key: OPENROUTER_API_KEY
+        sync: false
+      - key: JWT_SECRET
+        generateValue: true
+
+  - type: web
+    name: user-chat-app
+    env: static
+    staticPublishPath: ./user-app/public
+    routes:
+      - type: rewrite
+        source: /*
+        destination: /index.html
+
+  - type: web
+    name: admin-panel
+    env: static
+    staticPublishPath: ./admin-panel/public
+    routes:
+      - type: rewrite
+        source: /*
+        destination: /index.html
