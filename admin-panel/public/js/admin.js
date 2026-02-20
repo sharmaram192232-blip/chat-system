@@ -1,34 +1,59 @@
-// Admin Panel JavaScript - STABLE WORKING VERSION WITH ALL FEATURES
+// Mahadev Sports Admin Panel - COMPLETE REBUILD
 const socket = io('https://chat-system-mryx.onrender.com');
 let currentAgent = null;
 let currentUser = null;
 let token = null;
+let allUsers = [];
+let filteredUsers = [];
 
 // DOM Elements
-const loginContainer = document.getElementById('loginContainer');
-const adminPanel = document.getElementById('adminPanel');
-const loginForm = document.getElementById('loginForm');
-const userList = document.getElementById('userList');
-const messagesContainer = document.getElementById('messagesContainer');
-const chatHeader = document.getElementById('chatHeader');
-const chatInputArea = document.getElementById('chatInputArea');
-const messageInput = document.getElementById('messageInput');
-const sendButton = document.getElementById('sendButton');
-const agentInfo = document.getElementById('agentInfo');
-const logoutBtn = document.getElementById('logoutBtn');
+const loginPage = document.getElementById('login-page');
+const dashboardPage = document.getElementById('dashboard-page');
+const loginForm = document.getElementById('login-form');
+const agentSelect = document.getElementById('agent-select');
+const password = document.getElementById('password');
+const userList = document.getElementById('user-list');
+const messagesContainer = document.getElementById('messages-container');
+const emptyState = document.getElementById('empty-state');
+const chatHeader = document.getElementById('chat-header');
+const selectedUserName = document.getElementById('selected-user-name');
+const selectedUserStatus = document.getElementById('selected-user-status');
+const chatInputArea = document.getElementById('chat-input-area');
+const messageInput = document.getElementById('message-input');
+const sendBtn = document.getElementById('send-btn');
+const agentInfo = document.getElementById('agent-info');
+const logoutBtn = document.getElementById('logout-btn');
+const totalUsersEl = document.getElementById('total-users');
+const onlineUsersEl = document.getElementById('online-users');
+const unreadTotalEl = document.getElementById('unread-total');
+const userSearch = document.getElementById('user-search');
+const filterTabs = document.querySelectorAll('.filter-tab');
+const refreshBtn = document.getElementById('refresh-btn');
+const notesBtn = document.getElementById('notes-btn');
+const notesModal = document.getElementById('notes-modal');
+const closeNotes = document.getElementById('close-notes');
+const userNotes = document.getElementById('user-notes');
+const saveNotesBtn = document.getElementById('save-notes-btn');
+const notesHistory = document.getElementById('notes-history');
+const quickReplies = document.querySelectorAll('.quick-reply');
+const typingIndicator = document.getElementById('typing-indicator');
 
-// Login Form Submit
+// ============= LOGIN =============
 loginForm.addEventListener('submit', async (e) => {
     e.preventDefault();
     
-    const username = document.getElementById('username').value;
-    const password = document.getElementById('password').value;
+    const username = agentSelect.value;
+    const passwordVal = password.value;
+    const loginBtn = document.getElementById('login-btn');
+    
+    loginBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Logging in...';
+    loginBtn.disabled = true;
     
     try {
         const response = await fetch('https://chat-system-mryx.onrender.com/api/agent/login', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ username, password })
+            body: JSON.stringify({ username, password: passwordVal })
         });
         
         const data = await response.json();
@@ -37,85 +62,108 @@ loginForm.addEventListener('submit', async (e) => {
             token = data.token;
             currentAgent = data.agent;
             
-            loginContainer.style.display = 'none';
-            adminPanel.style.display = 'flex';
-            logoutBtn.style.display = 'block';
-            agentInfo.textContent = `Logged in as: ${data.agent.name}`;
+            loginPage.style.display = 'none';
+            dashboardPage.style.display = 'block';
+            agentInfo.innerHTML = `<i class="fas fa-user-circle"></i> ${data.agent.name}`;
             
             socket.emit('admin-connect', { token });
             loadUsers();
+            startRealTimeUpdates();
         } else {
             alert('Login failed: ' + data.error);
+            loginBtn.innerHTML = '<i class="fas fa-sign-in-alt"></i> Login to Dashboard';
+            loginBtn.disabled = false;
         }
     } catch (error) {
         alert('Login error. Please try again.');
+        loginBtn.innerHTML = '<i class="fas fa-sign-in-alt"></i> Login to Dashboard';
+        loginBtn.disabled = false;
     }
 });
 
-// Logout
+// ============= LOGOUT =============
 logoutBtn.addEventListener('click', () => {
     token = null;
     currentAgent = null;
     currentUser = null;
-    loginContainer.style.display = 'flex';
-    adminPanel.style.display = 'none';
-    logoutBtn.style.display = 'none';
+    loginPage.style.display = 'flex';
+    dashboardPage.style.display = 'none';
 });
 
-// Load Users
+// ============= LOAD USERS =============
 async function loadUsers() {
     try {
         const response = await fetch('https://chat-system-mryx.onrender.com/api/admin/users');
         const data = await response.json();
         
         if (data.success) {
-            displayUsers(data.users);
+            allUsers = data.users;
+            applyFilters();
+            updateStats();
         }
     } catch (error) {
         console.error('Failed to load users:', error);
     }
 }
 
-// Display Users in Sidebar with IDs and timestamps
+// ============= APPLY FILTERS =============
+function applyFilters() {
+    const searchTerm = userSearch.value.toLowerCase();
+    const activeFilter = document.querySelector('.filter-tab.active')?.dataset.filter || 'all';
+    
+    filteredUsers = allUsers.filter(user => {
+        // Search filter
+        const matchesSearch = user.name?.toLowerCase().includes(searchTerm) ||
+                             user.user_id?.toLowerCase().includes(searchTerm) ||
+                             (user.phone || '').includes(searchTerm);
+        
+        if (!matchesSearch) return false;
+        
+        // Tab filter
+        if (activeFilter === 'online') {
+            const lastActive = new Date(user.last_active);
+            const fiveMinAgo = new Date(Date.now() - 5 * 60 * 1000);
+            return lastActive > fiveMinAgo;
+        }
+        if (activeFilter === 'unread') {
+            return user.unread_count > 0;
+        }
+        if (activeFilter === 'new') {
+            return user.status === 'New';
+        }
+        return true;
+    });
+    
+    displayUsers(filteredUsers);
+}
+
+// ============= DISPLAY USERS =============
 function displayUsers(users) {
     userList.innerHTML = '';
     
     users.forEach(user => {
+        const lastActive = new Date(user.last_active);
+        const now = new Date();
+        const diffMin = Math.floor((now - lastActive) / (1000 * 60));
+        const isOnline = diffMin < 5;
+        const initials = (user.name || 'V').charAt(0).toUpperCase();
+        
         const userDiv = document.createElement('div');
-        userDiv.className = 'user-item';
-        userDiv.setAttribute('data-user-id', user.user_id);
-        
-        // Format user ID to show last 6 characters
-        const shortId = user.user_id ? user.user_id.slice(-6) : '------';
-        
-        // Format last active time
-        let lastActiveTime = '';
-        if (user.last_active) {
-            const date = new Date(user.last_active);
-            lastActiveTime = date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-        }
+        userDiv.className = `user-item ${currentUser?.user_id === user.user_id ? 'active' : ''}`;
+        userDiv.dataset.userId = user.user_id;
         
         userDiv.innerHTML = `
-            <div style="padding: 10px;">
-                <div style="display: flex; justify-content: space-between; align-items: center;">
-                    <strong>${user.name || 'Visitor'}</strong>
-                    <span style="
-                        font-size: 10px; 
-                        color: #666; 
-                        background: #f0f0f0; 
-                        padding: 2px 6px; 
-                        border-radius: 10px;
-                        font-family: monospace;
-                    ">${shortId}</span>
-                </div>
-                <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 4px;">
-                    <span style="font-size: 12px; color: #666;">
-                        ${user.status || 'New'} | ${user.ai_active ? 'AI' : 'Agent'}
-                    </span>
-                    <span style="font-size: 10px; color: #999;">
-                        ${lastActiveTime}
-                    </span>
-                </div>
+            <div class="user-avatar">${initials}</div>
+            <div class="user-info">
+                <h4>${user.name || 'Visitor'}</h4>
+                <p>
+                    <i class="fas fa-circle" style="color: ${isOnline ? '#4caf50' : '#999'}; font-size: 8px;"></i>
+                    ${user.status || 'New'} · ${user.ai_active ? 'AI' : 'Agent'}
+                </p>
+            </div>
+            <div class="user-meta">
+                <span class="time">${diffMin < 1 ? 'now' : diffMin + 'm ago'}</span>
+                ${user.unread_count > 0 ? `<span class="unread-badge">${user.unread_count}</span>` : ''}
             </div>
         `;
         
@@ -124,17 +172,25 @@ function displayUsers(users) {
     });
 }
 
-// Select User to Chat
+// ============= SELECT USER =============
 async function selectUser(user) {
     currentUser = user;
     
     document.querySelectorAll('.user-item').forEach(el => el.classList.remove('active'));
-    event.currentTarget.classList.add('active');
+    document.querySelector(`[data-user-id="${user.user_id}"]`).classList.add('active');
     
-    chatHeader.innerHTML = `<h3>Chat with ${user.name || 'Visitor'}</h3>`;
-    chatInputArea.style.display = 'flex';
-    messageInput.focus();
+    selectedUserName.textContent = `Chat with ${user.name || 'Visitor'}`;
+    const lastActive = new Date(user.last_active);
+    const diffMin = Math.floor((Date.now() - lastActive) / (1000 * 60));
+    selectedUserStatus.innerHTML = `
+        <i class="fas fa-circle" style="color: ${diffMin < 5 ? '#4caf50' : '#999'}; font-size: 10px;"></i>
+        ${diffMin < 5 ? 'Online' : 'Offline'} · ID: ${user.user_id.slice(-6)}
+    `;
     
+    chatInputArea.style.display = 'block';
+    if (emptyState) emptyState.style.display = 'none';
+    
+    // Load messages
     try {
         const response = await fetch(`https://chat-system-mryx.onrender.com/api/admin/user/${user.user_id}`);
         const data = await response.json();
@@ -148,108 +204,60 @@ async function selectUser(user) {
     }
 }
 
-// Send Message
-sendButton.addEventListener('click', sendMessage);
+// ============= DISPLAY MESSAGE =============
+function displayMessage(data) {
+    const messageDiv = document.createElement('div');
+    messageDiv.className = `message ${data.senderType === 'agent' ? 'sent' : 'received'}`;
+    
+    const time = new Date(data.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    
+    let senderName = '';
+    if (data.senderType === 'agent' && data.agentName) {
+        senderName = `<div class="sender-name">${data.agentName}</div>`;
+    } else if (data.senderType === 'user') {
+        senderName = `<div class="sender-name">User</div>`;
+    } else if (data.senderType === 'ai') {
+        senderName = `<div class="sender-name">AI Assistant</div>`;
+    }
+    
+    messageDiv.innerHTML = `
+        <div class="message-bubble">
+            ${senderName}
+            <div>${escapeHtml(data.message)}</div>
+            <div class="message-info">${time}</div>
+        </div>
+    `;
+    
+    messagesContainer.appendChild(messageDiv);
+    messagesContainer.scrollTop = messagesContainer.scrollHeight;
+}
+
+// ============= SEND MESSAGE =============
+sendBtn.addEventListener('click', sendMessage);
 messageInput.addEventListener('keypress', (e) => {
-    if (e.key === 'Enter') {
+    if (e.key === 'Enter' && !e.shiftKey) {
+        e.preventDefault();
         sendMessage();
     }
 });
 
 function sendMessage() {
-    const message = messageInput.value.trim();
-    if (!message || !currentUser || !currentAgent) return;
+    const msg = messageInput.value.trim();
+    if (!msg || !currentUser || !currentAgent) return;
     
     messageInput.value = '';
     
-    // Send to server
     socket.emit('agent-message', {
         userId: currentUser.user_id,
-        message,
+        message: msg,
         agentName: currentAgent.name,
         agentId: currentAgent.id
     });
 }
 
-function displayMessage(data) {
-    console.log('RAW MESSAGE DATA:', data); // ADD THIS LINE
-    
-    // rest of your function...
-}
-// Display Message with proper formatting
-function displayMessage(data) {
-    const messageDiv = document.createElement('div');
-    messageDiv.style.marginBottom = '12px';
-    messageDiv.style.clear = 'both';
-    
-    // Set alignment based on sender
-    if (data.senderType === 'agent') {
-        messageDiv.style.textAlign = 'right';
-    } else {
-        messageDiv.style.textAlign = 'left';
-    }
-    
-    const bubbleDiv = document.createElement('div');
-    bubbleDiv.style.display = 'inline-block';
-    bubbleDiv.style.maxWidth = '70%';
-    bubbleDiv.style.padding = '8px 12px';
-    bubbleDiv.style.borderRadius = '15px';
-    bubbleDiv.style.wordWrap = 'break-word';
-    
-    // Set colors based on sender
-    if (data.senderType === 'agent') {
-        bubbleDiv.style.backgroundColor = '#dcf8c6'; // Light green for agent
-        bubbleDiv.style.borderBottomRightRadius = '4px';
-    } else if (data.senderType === 'user') {
-        bubbleDiv.style.backgroundColor = '#ffffff'; // White for user
-        bubbleDiv.style.border = '1px solid #e0e0e0';
-        bubbleDiv.style.borderBottomLeftRadius = '4px';
-    } else if (data.senderType === 'ai') {
-        bubbleDiv.style.backgroundColor = '#e3f2fd'; // Light blue for AI
-        bubbleDiv.style.borderBottomLeftRadius = '4px';
-    }
-    
-    // Format timestamp
-    let timeString = '';
-    if (data.timestamp) {
-        const date = new Date(data.timestamp);
-        timeString = date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-    } else {
-        timeString = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-    }
-    
-    // Set sender name
-    let senderDisplay = '';
-    if (data.senderType === 'agent' && data.agentName) {
-        senderDisplay = data.agentName;
-    } else if (data.senderType === 'user') {
-        senderDisplay = 'User';
-    } else if (data.senderType === 'ai') {
-        senderDisplay = 'AI Assistant';
-    }
-    
-    // Build bubble content
-    bubbleDiv.innerHTML = `
-        <div style="font-weight: bold; font-size: 12px; margin-bottom: 4px; color: #075e54;">
-            ${senderDisplay}
-        </div>
-        <div style="font-size: 14px;">${data.message}</div>
-        <div style="font-size: 10px; color: #999; text-align: right; margin-top: 4px;">
-            ${timeString}
-        </div>
-    `;
-    
-    messageDiv.appendChild(bubbleDiv);
-    messagesContainer.appendChild(messageDiv);
-    messagesContainer.scrollTop = messagesContainer.scrollHeight;
-}
-
-// Socket Events
+// ============= SOCKET EVENTS =============
 socket.on('connect', () => {
-    console.log('Connected to server');
-    if (token) {
-        socket.emit('admin-connect', { token });
-    }
+    if (token) socket.emit('admin-connect', { token });
 });
 
 socket.on('new-message', (data) => {
@@ -259,10 +267,114 @@ socket.on('new-message', (data) => {
     loadUsers();
 });
 
-socket.on('user-online', () => {
-    loadUsers();
+socket.on('user-typing', (data) => {
+    if (currentUser && data.userId === currentUser.user_id) {
+        typingIndicator.style.display = data.isTyping ? 'flex' : 'none';
+    }
 });
 
-// Load users every 10 seconds
-setInterval(loadUsers, 10000);
+// ============= REAL-TIME UPDATES =============
+function startRealTimeUpdates() {
+    setInterval(loadUsers, 10000);
+}
 
+// ============= SEARCH =============
+userSearch.addEventListener('input', applyFilters);
+
+// ============= FILTER TABS =============
+filterTabs.forEach(tab => {
+    tab.addEventListener('click', () => {
+        filterTabs.forEach(t => t.classList.remove('active'));
+        tab.classList.add('active');
+        applyFilters();
+    });
+});
+
+// ============= REFRESH =============
+refreshBtn.addEventListener('click', loadUsers);
+
+// ============= QUICK REPLIES =============
+quickReplies.forEach(reply => {
+    reply.addEventListener('click', () => {
+        messageInput.value = reply.dataset.text;
+        messageInput.focus();
+    });
+});
+
+// ============= NOTES =============
+notesBtn.addEventListener('click', () => {
+    if (!currentUser) {
+        alert('Please select a user first');
+        return;
+    }
+    loadNotes();
+    notesModal.style.display = 'flex';
+});
+
+closeNotes.addEventListener('click', () => {
+    notesModal.style.display = 'none';
+});
+
+async function loadNotes() {
+    try {
+        const response = await fetch(`https://chat-system-mryx.onrender.com/api/admin/user/${currentUser.user_id}/notes`);
+        const data = await response.json();
+        
+        if (data.success) {
+            userNotes.value = data.note || '';
+            
+            notesHistory.innerHTML = '';
+            if (data.history?.length) {
+                data.history.forEach(note => {
+                    const noteDiv = document.createElement('div');
+                    noteDiv.className = 'note-item';
+                    noteDiv.innerHTML = `
+                        <div>${note.note}</div>
+                        <small>${note.created_by} · ${new Date(note.created_at).toLocaleString()}</small>
+                    `;
+                    notesHistory.appendChild(noteDiv);
+                });
+            }
+        }
+    } catch (error) {
+        console.error('Failed to load notes:', error);
+    }
+}
+
+saveNotesBtn.addEventListener('click', async () => {
+    if (!currentUser) return;
+    
+    try {
+        await fetch(`https://chat-system-mryx.onrender.com/api/admin/user/${currentUser.user_id}/note`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ note: userNotes.value, created_by: currentAgent.name })
+        });
+        
+        notesModal.style.display = 'none';
+        alert('Note saved successfully');
+    } catch (error) {
+        alert('Failed to save note');
+    }
+});
+
+// ============= UPDATE STATS =============
+function updateStats() {
+    totalUsersEl.textContent = allUsers.length;
+    
+    const online = allUsers.filter(u => {
+        const last = new Date(u.last_active);
+        return (Date.now() - last) < 5 * 60 * 1000;
+    }).length;
+    onlineUsersEl.textContent = online;
+    
+    const unread = allUsers.reduce((sum, u) => sum + (u.unread_count || 0), 0);
+    unreadTotalEl.textContent = unread;
+}
+
+// ============= HELPER =============
+function escapeHtml(text) {
+    const div = document.createElement('div');
+    div.textContent = text;
+    return div.innerHTML;
+}
