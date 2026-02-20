@@ -1,4 +1,4 @@
-// Admin Panel JavaScript - STABLE WORKING VERSION
+// Admin Panel - SIMPLE WORKING VERSION
 const socket = io('https://chat-system-mryx.onrender.com');
 let currentAgent = null;
 let currentUser = null;
@@ -17,38 +17,34 @@ const sendButton = document.getElementById('sendButton');
 const agentInfo = document.getElementById('agentInfo');
 const logoutBtn = document.getElementById('logoutBtn');
 
-// Login Form Submit
+// Login
 loginForm.addEventListener('submit', async (e) => {
     e.preventDefault();
     
     const username = document.getElementById('username').value;
     const password = document.getElementById('password').value;
     
-    try {
-        const response = await fetch('https://chat-system-mryx.onrender.com/api/agent/login', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ username, password })
-        });
+    const response = await fetch('https://chat-system-mryx.onrender.com/api/agent/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username, password })
+    });
+    
+    const data = await response.json();
+    
+    if (data.success) {
+        token = data.token;
+        currentAgent = data.agent;
         
-        const data = await response.json();
+        loginContainer.style.display = 'none';
+        adminPanel.style.display = 'flex';
+        logoutBtn.style.display = 'block';
+        agentInfo.textContent = `Logged in as: ${data.agent.name}`;
         
-        if (data.success) {
-            token = data.token;
-            currentAgent = data.agent;
-            
-            loginContainer.style.display = 'none';
-            adminPanel.style.display = 'flex';
-            logoutBtn.style.display = 'block';
-            agentInfo.textContent = `Logged in as: ${data.agent.name}`;
-            
-            socket.emit('admin-connect', { token });
-            loadUsers();
-        } else {
-            alert('Login failed: ' + data.error);
-        }
-    } catch (error) {
-        alert('Login error. Please try again.');
+        socket.emit('admin-connect', { token });
+        loadUsers();
+    } else {
+        alert('Login failed');
     }
 });
 
@@ -64,72 +60,31 @@ logoutBtn.addEventListener('click', () => {
 
 // Load Users
 async function loadUsers() {
-    try {
-        const response = await fetch('https://chat-system-mryx.onrender.com/api/admin/users');
-        const data = await response.json();
-        
-        if (data.success) {
-            displayUsers(data.users);
-        }
-    } catch (error) {
-        console.error('Failed to load users:', error);
-    }
+    const response = await fetch('https://chat-system-mryx.onrender.com/api/admin/users');
+    const data = await response.json();
+    if (data.success) displayUsers(data.users);
 }
 
-// Display Users in Sidebar
+// Display Users
 function displayUsers(users) {
     userList.innerHTML = '';
-    
     users.forEach(user => {
-        const userDiv = document.createElement('div');
-        userDiv.className = 'user-item';
-        userDiv.setAttribute('data-user-id', user.user_id);
-        
-        // Format the user ID to show last 6 characters
-        const shortId = user.user_id ? user.user_id.slice(-6) : '------';
-        
-        userDiv.innerHTML = `
-            <div style="padding: 10px;">
-                <div style="display: flex; justify-content: space-between; align-items: center;">
-                    <strong>${user.name || 'Visitor'}</strong>
-                    <span style="
-                        font-size: 10px; 
-                        color: #666; 
-                        background: #f0f0f0; 
-                        padding: 2px 6px; 
-                        border-radius: 10px;
-                        font-family: monospace;
-                    ">${shortId}</span>
-                </div>
-                <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 4px;">
-                    <span style="font-size: 12px; color: #666;">
-                        ${user.status || 'New'} | ${user.ai_active ? 'AI' : 'Agent'}
-                    </span>
-                    <span style="font-size: 10px; color: #999;">
-                        ${user.last_active ? new Date(user.last_active).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : ''}
-                    </span>
-                </div>
-            </div>
-        `;
-        
-        userDiv.addEventListener('click', () => selectUser(user));
-        userList.appendChild(userDiv);
+        const div = document.createElement('div');
+        div.className = 'user-item';
+        div.onclick = () => selectUser(user);
+        div.innerHTML = `<strong>${user.name || 'Visitor'}</strong><br><small>${user.status} | ${user.ai_active ? 'AI' : 'Agent'}</small>`;
+        userList.appendChild(div);
     });
 }
 
-// Select User to Chat
+// Select User
 async function selectUser(user) {
     currentUser = user;
-    
-    document.querySelectorAll('.user-item').forEach(el => el.classList.remove('active'));
-    event.currentTarget.classList.add('active');
-    
     chatHeader.innerHTML = `<h3>Chat with ${user.name || 'Visitor'}</h3>`;
     chatInputArea.style.display = 'flex';
     
     const response = await fetch(`https://chat-system-mryx.onrender.com/api/admin/user/${user.user_id}`);
     const data = await response.json();
-    
     if (data.success) {
         messagesContainer.innerHTML = '';
         data.messages.forEach(msg => displayMessage(msg));
@@ -137,152 +92,75 @@ async function selectUser(user) {
 }
 
 // Send Message
-sendButton.addEventListener('click', sendMessage);
-messageInput.addEventListener('keypress', (e) => {
-    if (e.key === 'Enter') {
-        sendMessage();
-    }
-});
+sendButton.onclick = sendMessage;
+messageInput.onkeypress = (e) => { if (e.key === 'Enter') sendMessage(); };
 
 function sendMessage() {
-    const message = messageInput.value.trim();
-    if (!message || !currentUser || !currentAgent) return;
-    
+    const msg = messageInput.value.trim();
+    if (!msg || !currentUser || !currentAgent) return;
     messageInput.value = '';
-    
     socket.emit('agent-message', {
         userId: currentUser.user_id,
-        message,
+        message: msg,
         agentName: currentAgent.name,
         agentId: currentAgent.id
     });
-    
-    displayMessage({
-        message,
-        senderType: 'agent',
-        agentName: currentAgent.name,
-        timestamp: new Date()
-    });
 }
 
-// ===== UPDATED DISPLAY MESSAGE FUNCTION =====
-// Display Message with proper bubbles and labels for ALL senders
+// Display Message
 function displayMessage(data) {
-    console.log('Displaying message:', data); // Debug line
+    const wrapper = document.createElement('div');
+    wrapper.style.margin = '10px 0';
+    wrapper.style.textAlign = data.senderType === 'agent' ? 'right' : 'left';
     
-    const messageDiv = document.createElement('div');
-    messageDiv.style.marginBottom = '15px';
-    messageDiv.style.clear = 'both';
-    messageDiv.style.display = 'flex';
+    const bubble = document.createElement('div');
+    bubble.style.display = 'inline-block';
+    bubble.style.maxWidth = '70%';
+    bubble.style.padding = '8px 12px';
+    bubble.style.borderRadius = '15px';
+    bubble.style.backgroundColor = 
+        data.senderType === 'agent' ? '#dcf8c6' :
+        data.senderType === 'user' ? 'white' : '#e3f2fd';
+    if (data.senderType === 'user') bubble.style.border = '1px solid #ddd';
     
-    // Position based on sender type
-    if (data.senderType === 'agent') {
-        messageDiv.style.justifyContent = 'flex-end'; // Agent on RIGHT
-    } else {
-        messageDiv.style.justifyContent = 'flex-start'; // User/AI on LEFT
-    }
+    const name = document.createElement('div');
+    name.style.fontWeight = 'bold';
+    name.style.fontSize = '12px';
+    name.style.marginBottom = '4px';
+    name.style.color = 
+        data.senderType === 'agent' ? '#075e54' :
+        data.senderType === 'user' ? '#128c7e' : '#1565c0';
+    name.textContent = 
+        data.senderType === 'agent' ? (data.agentName || 'Agent') :
+        data.senderType === 'user' ? 'User' : 'AI Assistant';
     
-    const bubbleDiv = document.createElement('div');
-    bubbleDiv.style.maxWidth = '70%';
-    bubbleDiv.style.padding = '10px 14px';
-    bubbleDiv.style.borderRadius = '18px';
-    bubbleDiv.style.wordWrap = 'break-word';
-    bubbleDiv.style.boxShadow = '0 1px 2px rgba(0,0,0,0.1)';
+    const text = document.createElement('div');
+    text.style.fontSize = '14px';
+    text.textContent = data.message;
     
-    // Different colors for different sender types
-    if (data.senderType === 'agent') {
-        bubbleDiv.style.backgroundColor = '#dcf8c6'; // Light green
-        bubbleDiv.style.borderBottomRightRadius = '4px';
-    } else if (data.senderType === 'user') {
-        bubbleDiv.style.backgroundColor = '#ffffff'; // White
-        bubbleDiv.style.border = '1px solid #e0e0e0';
-        bubbleDiv.style.borderBottomLeftRadius = '4px';
-    } else if (data.senderType === 'ai') {
-        bubbleDiv.style.backgroundColor = '#e3f2fd'; // Light blue
-        bubbleDiv.style.borderBottomLeftRadius = '4px';
-    }
+    const time = document.createElement('div');
+    time.style.fontSize = '10px';
+    time.style.color = '#999';
+    time.style.textAlign = 'right';
+    time.style.marginTop = '4px';
+    time.textContent = data.timestamp ? 
+        new Date(data.timestamp).toLocaleTimeString().slice(0,5) : 
+        new Date().toLocaleTimeString().slice(0,5);
     
-    // Format time
-    const time = data.timestamp ? new Date(data.timestamp).toLocaleTimeString([], { 
-        hour: '2-digit', 
-        minute: '2-digit' 
-    }) : new Date().toLocaleTimeString([], { 
-        hour: '2-digit', 
-        minute: '2-digit' 
-    });
-    
-    // Set sender label based on type (ENSURES ALL MESSAGES HAVE LABELS)
-    let senderLabel = '';
-    let senderColor = '';
-    
-    if (data.senderType === 'agent' && data.agentName) {
-        senderLabel = data.agentName;
-        senderColor = '#075e54';
-    } else if (data.senderType === 'user') {
-        senderLabel = 'User';
-        senderColor = '#128c7e';
-    } else if (data.senderType === 'ai') {
-        senderLabel = 'AI Assistant';
-        senderColor = '#1565c0';
-    } else {
-        // Fallback for any unknown type
-        senderLabel = data.senderType || 'Unknown';
-        senderColor = '#999';
-    }
-    
-    // Escape message to prevent XSS
-    const escapeHtml = (text) => {
-        if (!text) return '';
-        const div = document.createElement('div');
-        div.textContent = text;
-        return div.innerHTML;
-    };
-    
-    // Build the bubble content with sender label ALWAYS shown
-    bubbleDiv.innerHTML = `
-        <div style="font-weight: 600; font-size: 12px; color: ${senderColor}; margin-bottom: 4px;">
-            ${senderLabel}
-        </div>
-        <div style="font-size: 14px; line-height: 1.4;">
-            ${escapeHtml(data.message)}
-        </div>
-        <div style="font-size: 10px; color: #999; text-align: right; margin-top: 4px;">
-            ${time}
-        </div>
-    `;
-    
-    messageDiv.appendChild(bubbleDiv);
-    messagesContainer.appendChild(messageDiv);
+    bubble.appendChild(name);
+    bubble.appendChild(text);
+    bubble.appendChild(time);
+    wrapper.appendChild(bubble);
+    messagesContainer.appendChild(wrapper);
     messagesContainer.scrollTop = messagesContainer.scrollHeight;
 }
 
-// Helper function to escape HTML (kept for backward compatibility)
-function escapeHtml(text) {
-    if (!text) return '';
-    const div = document.createElement('div');
-    div.textContent = text;
-    return div.innerHTML;
-}
-
-// Socket Events
-socket.on('connect', () => {
-    console.log('Connected to server');
-    if (token) {
-        socket.emit('admin-connect', { token });
-    }
-});
-
+// Socket events
 socket.on('new-message', (data) => {
-    console.log('New message received:', data); // Debug line
-    if (currentUser && data.userId === currentUser.user_id) {
-        displayMessage(data);
-    }
+    if (currentUser && data.userId === currentUser.user_id) displayMessage(data);
     loadUsers();
 });
 
-socket.on('user-online', () => {
-    loadUsers();
-});
+socket.on('user-online', () => loadUsers());
 
-// Load users every 15 seconds
-setInterval(loadUsers, 15000);
+setInterval(loadUsers, 10000);
