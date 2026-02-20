@@ -218,6 +218,13 @@ function displayMessage(data) {
         senderName = `<div style="font-weight: 600; font-size: 12px; color: #1565c0; margin-bottom: 4px;">AI Assistant</div>`;
     }
     
+    // Escape message to prevent XSS
+    const escapeHtml = (text) => {
+        const div = document.createElement('div');
+        div.textContent = text;
+        return div.innerHTML;
+    };
+    
     bubbleDiv.innerHTML = `
         ${senderName}
         <div style="font-size: 14px; line-height: 1.4;">${escapeHtml(data.message)}</div>
@@ -257,5 +264,6 @@ socket.on('user-online', () => {
 
 // Load users every 15 seconds
 setInterval(loadUsers, 15000);
+
 
 
