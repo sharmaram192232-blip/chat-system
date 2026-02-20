@@ -165,22 +165,75 @@ function sendMessage() {
     });
 }
 
-// Display Message
+// Display Message with proper bubbles
 function displayMessage(data) {
     const messageDiv = document.createElement('div');
-    messageDiv.className = `message ${data.senderType}`;
     
-    const time = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-    
-    let senderInfo = '';
-    if (data.senderType === 'agent' && data.agentName) {
-        senderInfo = `<strong>${data.agentName}:</strong> `;
+    // Different alignment for different senders
+    if (data.senderType === 'agent') {
+        messageDiv.style.display = 'flex';
+        messageDiv.style.justifyContent = 'flex-end'; // Agent on RIGHT side
+        messageDiv.style.marginBottom = '12px';
+    } else {
+        messageDiv.style.display = 'flex';
+        messageDiv.style.justifyContent = 'flex-start'; // Others on LEFT
+        messageDiv.style.marginBottom = '12px';
     }
     
-    messageDiv.innerHTML = senderInfo + data.message + `<div style="font-size: 10px; color: #999; text-align: right;">${time}</div>`;
+    const bubbleDiv = document.createElement('div');
+    bubbleDiv.style.maxWidth = '70%';
+    bubbleDiv.style.padding = '10px 14px';
+    bubbleDiv.style.borderRadius = '18px';
+    bubbleDiv.style.wordWrap = 'break-word';
+    bubbleDiv.style.boxShadow = '0 1px 2px rgba(0,0,0,0.1)';
     
+    // Different colors for different sender types
+    if (data.senderType === 'agent') {
+        bubbleDiv.style.backgroundColor = '#dcf8c6'; // Light green like WhatsApp
+        bubbleDiv.style.borderBottomRightRadius = '4px';
+    } else if (data.senderType === 'user') {
+        bubbleDiv.style.backgroundColor = '#ffffff'; // White for user
+        bubbleDiv.style.borderBottomLeftRadius = '4px';
+        bubbleDiv.style.border = '1px solid #e0e0e0';
+    } else if (data.senderType === 'ai') {
+        bubbleDiv.style.backgroundColor = '#e3f2fd'; // Light blue for AI
+        bubbleDiv.style.borderBottomLeftRadius = '4px';
+    }
+    
+    // Sender name and time
+    const time = data.timestamp ? new Date(data.timestamp).toLocaleTimeString([], { 
+        hour: '2-digit', 
+        minute: '2-digit' 
+    }) : new Date().toLocaleTimeString([], { 
+        hour: '2-digit', 
+        minute: '2-digit' 
+    });
+    
+    let senderName = '';
+    if (data.senderType === 'agent' && data.agentName) {
+        senderName = `<div style="font-weight: 600; font-size: 12px; color: #075e54; margin-bottom: 4px;">${data.agentName}</div>`;
+    } else if (data.senderType === 'user') {
+        senderName = `<div style="font-weight: 600; font-size: 12px; color: #128c7e; margin-bottom: 4px;">User</div>`;
+    } else if (data.senderType === 'ai') {
+        senderName = `<div style="font-weight: 600; font-size: 12px; color: #1565c0; margin-bottom: 4px;">AI Assistant</div>`;
+    }
+    
+    bubbleDiv.innerHTML = `
+        ${senderName}
+        <div style="font-size: 14px; line-height: 1.4;">${escapeHtml(data.message)}</div>
+        <div style="font-size: 10px; color: #999; text-align: right; margin-top: 4px;">${time}</div>
+    `;
+    
+    messageDiv.appendChild(bubbleDiv);
     messagesContainer.appendChild(messageDiv);
     messagesContainer.scrollTop = messagesContainer.scrollHeight;
+}
+
+// Helper function to escape HTML
+function escapeHtml(text) {
+    const div = document.createElement('div');
+    div.textContent = text;
+    return div.innerHTML;
 }
 
 // Socket Events
@@ -204,4 +257,5 @@ socket.on('user-online', () => {
 
 // Load users every 15 seconds
 setInterval(loadUsers, 15000);
+
 
