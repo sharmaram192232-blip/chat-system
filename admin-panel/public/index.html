@@ -270,6 +270,61 @@
         .logout-btn:hover {
             background: #d32f2f;
         }
+        
+        /* ===== ADDED FOR BETTER BUBBLE VISIBILITY ===== */
+        .messages-container {
+            background-color: #e5ddd5 !important;
+            background-image: radial-gradient(circle, #ccbdb0 1px, transparent 1px) !important;
+            background-size: 20px 20px !important;
+        }
+        
+        /* Style for dynamically created message bubbles */
+        .message-agent, .message-user, .message-ai {
+            max-width: 70%;
+            padding: 10px 14px;
+            border-radius: 18px;
+            margin-bottom: 12px;
+            word-wrap: break-word;
+            box-shadow: 0 1px 2px rgba(0,0,0,0.1);
+        }
+        
+        .message-agent {
+            background-color: #dcf8c6;
+            align-self: flex-end;
+            border-bottom-right-radius: 4px;
+        }
+        
+        .message-user {
+            background-color: #ffffff;
+            align-self: flex-start;
+            border: 1px solid #e0e0e0;
+            border-bottom-left-radius: 4px;
+        }
+        
+        .message-ai {
+            background-color: #e3f2fd;
+            align-self: flex-start;
+            border-bottom-left-radius: 4px;
+        }
+        
+        /* Sender name styling */
+        .sender-name {
+            font-weight: 600;
+            font-size: 12px;
+            margin-bottom: 4px;
+        }
+        
+        .sender-name.agent { color: #075e54; }
+        .sender-name.user { color: #128c7e; }
+        .sender-name.ai { color: #1565c0; }
+        
+        /* Message time styling */
+        .message-time {
+            font-size: 10px;
+            color: #999;
+            text-align: right;
+            margin-top: 4px;
+        }
     </style>
 </head>
 <body>
@@ -326,4 +381,3 @@
     <script src="js/admin.js"></script>
 </body>
 </html>
-
