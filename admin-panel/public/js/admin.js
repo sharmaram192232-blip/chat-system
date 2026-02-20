@@ -1,8 +1,9 @@
-// Admin Panel JavaScript - STABLE WORKING VERSION
+// Admin Panel JavaScript - BUG FIXED VERSION
 const socket = io('https://chat-system-mryx.onrender.com');
 let currentAgent = null;
 let currentUser = null;
 let token = null;
+let pendingMessages = new Set(); // Track pending message IDs
 
 // DOM Elements
 const loginContainer = document.getElementById('loginContainer');
@@ -60,6 +61,7 @@ logoutBtn.addEventListener('click', () => {
     loginContainer.style.display = 'flex';
     adminPanel.style.display = 'none';
     logoutBtn.style.display = 'none';
+    pendingMessages.clear();
 });
 
 // Load Users
@@ -85,7 +87,6 @@ function displayUsers(users) {
         userDiv.className = 'user-item';
         userDiv.setAttribute('data-user-id', user.user_id);
         
-        // Format the user ID to show last 6 characters
         const shortId = user.user_id ? user.user_id.slice(-6) : '------';
         
         userDiv.innerHTML = `
@@ -126,6 +127,9 @@ async function selectUser(user) {
     
     chatHeader.innerHTML = `<h3>Chat with ${user.name || 'Visitor'}</h3>`;
     chatInputArea.style.display = 'flex';
+    messageInput.focus();
+    
+    pendingMessages.clear(); // Clear pending messages when switching users
     
     const response = await fetch(`https://chat-system-mryx.onrender.com/api/admin/user/${user.user_id}`);
     const data = await response.json();
@@ -150,97 +154,126 @@ function sendMessage() {
     
     messageInput.value = '';
     
-    socket.emit('agent-message', {
-        userId: currentUser.user_id,
-        message,
-        agentName: currentAgent.name,
-        agentId: currentAgent.id
-    });
+    // Create a temporary ID for this message
+    const tempId = Date.now().toString();
+    pendingMessages.add(tempId);
     
-    displayMessage({
-        message,
+    // Create message object
+    const messageObj = {
+        id: tempId,
+        message: message,
         senderType: 'agent',
         agentName: currentAgent.name,
-        timestamp: new Date()
+        timestamp: new Date().toISOString()
+    };
+    
+    // Display locally first
+    displayMessage(messageObj);
+    
+    // Send to server
+    socket.emit('agent-message', {
+        userId: currentUser.user_id,
+        message: message,
+        agentName: currentAgent.name,
+        agentId: currentAgent.id,
+        tempId: tempId // Send temp ID to prevent duplicate
     });
 }
 
-// Display Message with proper bubbles
+// Display Message - FIXED VERSION
 function displayMessage(data) {
-    const messageDiv = document.createElement('div');
+    console.log('Displaying message:', data);
     
-    // Different alignment for different senders
+    const messageDiv = document.createElement('div');
+    messageDiv.style.marginBottom = '15px';
+    messageDiv.style.clear = 'both';
+    messageDiv.style.display = 'flex';
+    messageDiv.style.width = '100%';
+    
+    // Determine alignment based on sender type
+    let alignment = 'flex-start';
+    let bubbleColor = '';
+    let senderLabel = '';
+    let textColor = '#333';
+    
     if (data.senderType === 'agent') {
-        messageDiv.style.display = 'flex';
-        messageDiv.style.justifyContent = 'flex-end'; // Agent on RIGHT side
-        messageDiv.style.marginBottom = '12px';
-    } else {
-        messageDiv.style.display = 'flex';
-        messageDiv.style.justifyContent = 'flex-start'; // Others on LEFT
-        messageDiv.style.marginBottom = '12px';
+        alignment = 'flex-end'; // Agent on RIGHT
+        bubbleColor = '#dcf8c6'; // Light green
+        senderLabel = data.agentName || 'Agent';
+        textColor = '#000';
+    } else if (data.senderType === 'user') {
+        alignment = 'flex-start'; // User on LEFT
+        bubbleColor = '#ffffff'; // White
+        senderLabel = 'User';
+        bubbleColor = '#ffffff';
+    } else if (data.senderType === 'ai') {
+        alignment = 'flex-start'; // AI on LEFT
+        bubbleColor = '#e3f2fd'; // Light blue
+        senderLabel = 'AI Assistant';
+        textColor = '#1565c0';
     }
     
+    messageDiv.style.justifyContent = alignment;
+    
+    // Create bubble
     const bubbleDiv = document.createElement('div');
     bubbleDiv.style.maxWidth = '70%';
     bubbleDiv.style.padding = '10px 14px';
     bubbleDiv.style.borderRadius = '18px';
     bubbleDiv.style.wordWrap = 'break-word';
     bubbleDiv.style.boxShadow = '0 1px 2px rgba(0,0,0,0.1)';
+    bubbleDiv.style.backgroundColor = bubbleColor;
     
-    // Different colors for different sender types
-    if (data.senderType === 'agent') {
-        bubbleDiv.style.backgroundColor = '#dcf8c6'; // Light green like WhatsApp
-        bubbleDiv.style.borderBottomRightRadius = '4px';
-    } else if (data.senderType === 'user') {
-        bubbleDiv.style.backgroundColor = '#ffffff'; // White for user
-        bubbleDiv.style.borderBottomLeftRadius = '4px';
+    // Add border for user messages
+    if (data.senderType === 'user') {
         bubbleDiv.style.border = '1px solid #e0e0e0';
-    } else if (data.senderType === 'ai') {
-        bubbleDiv.style.backgroundColor = '#e3f2fd'; // Light blue for AI
+    }
+    
+    // Adjust border radius
+    if (alignment === 'flex-end') {
+        bubbleDiv.style.borderBottomRightRadius = '4px';
+    } else {
         bubbleDiv.style.borderBottomLeftRadius = '4px';
     }
     
-    // Sender name and time
-    const time = data.timestamp ? new Date(data.timestamp).toLocaleTimeString([], { 
-        hour: '2-digit', 
-        minute: '2-digit' 
-    }) : new Date().toLocaleTimeString([], { 
-        hour: '2-digit', 
-        minute: '2-digit' 
-    });
-    
-    let senderName = '';
-    if (data.senderType === 'agent' && data.agentName) {
-        senderName = `<div style="font-weight: 600; font-size: 12px; color: #075e54; margin-bottom: 4px;">${data.agentName}</div>`;
-    } else if (data.senderType === 'user') {
-        senderName = `<div style="font-weight: 600; font-size: 12px; color: #128c7e; margin-bottom: 4px;">User</div>`;
-    } else if (data.senderType === 'ai') {
-        senderName = `<div style="font-weight: 600; font-size: 12px; color: #1565c0; margin-bottom: 4px;">AI Assistant</div>`;
+    // Format time
+    let timeStr = '';
+    try {
+        timeStr = data.timestamp ? new Date(data.timestamp).toLocaleTimeString([], { 
+            hour: '2-digit', 
+            minute: '2-digit' 
+        }) : new Date().toLocaleTimeString([], { 
+            hour: '2-digit', 
+            minute: '2-digit' 
+        });
+    } catch (e) {
+        timeStr = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
     }
     
-    // Escape message to prevent XSS
+    // Escape HTML
     const escapeHtml = (text) => {
+        if (!text) return '';
         const div = document.createElement('div');
         div.textContent = text;
         return div.innerHTML;
     };
     
+    // Build bubble content
     bubbleDiv.innerHTML = `
-        ${senderName}
-        <div style="font-size: 14px; line-height: 1.4;">${escapeHtml(data.message)}</div>
-        <div style="font-size: 10px; color: #999; text-align: right; margin-top: 4px;">${time}</div>
+        <div style="font-weight: 600; font-size: 12px; color: #075e54; margin-bottom: 4px;">
+            ${escapeHtml(senderLabel)}
+        </div>
+        <div style="font-size: 14px; line-height: 1.4; color: ${textColor};">
+            ${escapeHtml(data.message)}
+        </div>
+        <div style="font-size: 10px; color: #999; text-align: right; margin-top: 4px;">
+            ${escapeHtml(timeStr)}
+        </div>
     `;
     
     messageDiv.appendChild(bubbleDiv);
     messagesContainer.appendChild(messageDiv);
     messagesContainer.scrollTop = messagesContainer.scrollHeight;
-}
-
-// Helper function to escape HTML
-function escapeHtml(text) {
-    const div = document.createElement('div');
-    div.textContent = text;
-    return div.innerHTML;
 }
 
 // Socket Events
@@ -252,6 +285,16 @@ socket.on('connect', () => {
 });
 
 socket.on('new-message', (data) => {
+    console.log('New message from server:', data);
+    
+    // Check if this is a message we already displayed locally
+    if (data.tempId && pendingMessages.has(data.tempId)) {
+        console.log('Ignoring duplicate message with tempId:', data.tempId);
+        pendingMessages.delete(data.tempId);
+        return;
+    }
+    
+    // Only display if it's for current user
     if (currentUser && data.userId === currentUser.user_id) {
         displayMessage(data);
     }
