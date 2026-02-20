@@ -1,10 +1,11 @@
-// Mahadev Sports Admin Panel - COMPLETE REBUILD
+// Mahadev Sports Admin Panel - COMPLETE FIXED VERSION
 const socket = io('https://chat-system-mryx.onrender.com');
 let currentAgent = null;
 let currentUser = null;
 let token = null;
 let allUsers = [];
 let filteredUsers = [];
+let userCounter = 1; // For generating User001, User002, etc.
 
 // DOM Elements
 const loginPage = document.getElementById('login-page');
@@ -37,6 +38,15 @@ const saveNotesBtn = document.getElementById('save-notes-btn');
 const notesHistory = document.getElementById('notes-history');
 const quickReplies = document.querySelectorAll('.quick-reply');
 const typingIndicator = document.getElementById('typing-indicator');
+
+// Sound notification
+const notificationSound = new Audio('https://www.soundjay.com/misc/sounds/bell-ringing-05.mp3');
+notificationSound.volume = 0.3;
+
+// Request notification permission
+if (Notification.permission === 'default') {
+    Notification.requestPermission();
+}
 
 // ============= LOGIN =============
 loginForm.addEventListener('submit', async (e) => {
@@ -97,7 +107,16 @@ async function loadUsers() {
         const data = await response.json();
         
         if (data.success) {
-            allUsers = data.users;
+            // Assign user numbers based on creation date
+            const sortedUsers = data.users.sort((a, b) => 
+                new Date(a.created_at) - new Date(b.created_at)
+            );
+            
+            sortedUsers.forEach((user, index) => {
+                user.displayName = `User${String(index + 1).padStart(3, '0')}`;
+            });
+            
+            allUsers = sortedUsers;
             applyFilters();
             updateStats();
         }
@@ -113,9 +132,9 @@ function applyFilters() {
     
     filteredUsers = allUsers.filter(user => {
         // Search filter
-        const matchesSearch = user.name?.toLowerCase().includes(searchTerm) ||
+        const matchesSearch = (user.displayName || '').toLowerCase().includes(searchTerm) ||
                              user.user_id?.toLowerCase().includes(searchTerm) ||
-                             (user.phone || '').includes(searchTerm);
+                             (user.name || '').toLowerCase().includes(searchTerm);
         
         if (!matchesSearch) return false;
         
@@ -146,7 +165,14 @@ function displayUsers(users) {
         const now = new Date();
         const diffMin = Math.floor((now - lastActive) / (1000 * 60));
         const isOnline = diffMin < 5;
-        const initials = (user.name || 'V').charAt(0).toUpperCase();
+        const initials = (user.displayName || 'U').charAt(0).toUpperCase();
+        
+        // Format time ago properly
+        let timeAgo = '';
+        if (diffMin < 1) timeAgo = 'just now';
+        else if (diffMin < 60) timeAgo = `${diffMin}m ago`;
+        else if (diffMin < 1440) timeAgo = `${Math.floor(diffMin / 60)}h ago`;
+        else timeAgo = `${Math.floor(diffMin / 1440)}d ago`;
         
         const userDiv = document.createElement('div');
         userDiv.className = `user-item ${currentUser?.user_id === user.user_id ? 'active' : ''}`;
@@ -155,14 +181,14 @@ function displayUsers(users) {
         userDiv.innerHTML = `
             <div class="user-avatar">${initials}</div>
             <div class="user-info">
-                <h4>${user.name || 'Visitor'}</h4>
+                <h4>${user.displayName || 'User'}</h4>
                 <p>
                     <i class="fas fa-circle" style="color: ${isOnline ? '#4caf50' : '#999'}; font-size: 8px;"></i>
-                    ${user.status || 'New'} · ${user.ai_active ? 'AI' : 'Agent'}
+                    ${user.status || 'New'} · ${user.ai_active ? '🤖 AI' : '👤 Agent'}
                 </p>
             </div>
             <div class="user-meta">
-                <span class="time">${diffMin < 1 ? 'now' : diffMin + 'm ago'}</span>
+                <span class="time">${timeAgo}</span>
                 ${user.unread_count > 0 ? `<span class="unread-badge">${user.unread_count}</span>` : ''}
             </div>
         `;
@@ -179,12 +205,15 @@ async function selectUser(user) {
     document.querySelectorAll('.user-item').forEach(el => el.classList.remove('active'));
     document.querySelector(`[data-user-id="${user.user_id}"]`).classList.add('active');
     
-    selectedUserName.textContent = `Chat with ${user.name || 'Visitor'}`;
+    selectedUserName.textContent = `Chat with ${user.displayName || 'User'}`;
+    
     const lastActive = new Date(user.last_active);
     const diffMin = Math.floor((Date.now() - lastActive) / (1000 * 60));
+    const isOnline = diffMin < 5;
+    
     selectedUserStatus.innerHTML = `
-        <i class="fas fa-circle" style="color: ${diffMin < 5 ? '#4caf50' : '#999'}; font-size: 10px;"></i>
-        ${diffMin < 5 ? 'Online' : 'Offline'} · ID: ${user.user_id.slice(-6)}
+        <i class="fas fa-circle" style="color: ${isOnline ? '#4caf50' : '#999'}; font-size: 10px;"></i>
+        ${isOnline ? 'Online' : 'Offline'} · ID: ${user.user_id.slice(-6)}
     `;
     
     chatInputArea.style.display = 'block';
@@ -209,22 +238,40 @@ function displayMessage(data) {
     const messageDiv = document.createElement('div');
     messageDiv.className = `message ${data.senderType === 'agent' ? 'sent' : 'received'}`;
     
-    const time = new Date(data.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    // Format time properly
+    let timeString = '';
+    if (data.timestamp) {
+        const date = new Date(data.timestamp);
+        const now = new Date();
+        const diffMin = Math.floor((now - date) / (1000 * 60));
+        
+        if (diffMin < 1) timeString = 'just now';
+        else if (diffMin < 60) timeString = `${diffMin}m ago`;
+        else timeString = date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    } else {
+        timeString = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    }
     
+    // Set sender name and icon based on type
     let senderName = '';
+    let senderIcon = '';
+    
     if (data.senderType === 'agent' && data.agentName) {
-        senderName = `<div class="sender-name">${data.agentName}</div>`;
+        senderName = data.agentName;
+        senderIcon = '👤';
     } else if (data.senderType === 'user') {
-        senderName = `<div class="sender-name">User</div>`;
+        senderName = currentUser?.displayName || 'User';
+        senderIcon = '👤';
     } else if (data.senderType === 'ai') {
-        senderName = `<div class="sender-name">AI Assistant</div>`;
+        senderName = 'AI Assistant';
+        senderIcon = '🤖';
     }
     
     messageDiv.innerHTML = `
         <div class="message-bubble">
-            ${senderName}
+            <div class="sender-name">${senderIcon} ${senderName}</div>
             <div>${escapeHtml(data.message)}</div>
-            <div class="message-info">${time}</div>
+            <div class="message-info">${timeString}</div>
         </div>
     `;
     
@@ -257,10 +304,31 @@ function sendMessage() {
 
 // ============= SOCKET EVENTS =============
 socket.on('connect', () => {
+    console.log('Connected to server');
     if (token) socket.emit('admin-connect', { token });
 });
 
 socket.on('new-message', (data) => {
+    console.log('New message received:', data);
+    
+    // Play sound and show notification for user messages
+    if (data.senderType === 'user') {
+        notificationSound.play().catch(e => console.log('Audio error:', e));
+        
+        if (Notification.permission === 'granted' && document.hidden) {
+            new Notification('New Message', {
+                body: `${data.userName || 'User'}: ${data.message.substring(0, 50)}${data.message.length > 50 ? '...' : ''}`,
+                icon: 'https://mahadevsupport.online/favicon.ico'
+            });
+        }
+        
+        // Update page title
+        document.title = '🔔 New Message - Admin Panel';
+        setTimeout(() => {
+            document.title = 'Mahadev Sports - Admin Panel';
+        }, 5000);
+    }
+    
     if (currentUser && data.userId === currentUser.user_id) {
         displayMessage(data);
     }
@@ -270,6 +338,9 @@ socket.on('new-message', (data) => {
 socket.on('user-typing', (data) => {
     if (currentUser && data.userId === currentUser.user_id) {
         typingIndicator.style.display = data.isTyping ? 'flex' : 'none';
+        if (data.isTyping) {
+            typingIndicator.innerHTML = '<span></span><span></span><span></span> User is typing...';
+        }
     }
 });
 
@@ -378,3 +449,6 @@ function escapeHtml(text) {
     div.textContent = text;
     return div.innerHTML;
 }
+
+// ============= ADD NOTES API ENDPOINT TO BACKEND =============
+// Note: You'll need to add this to your server.js later
