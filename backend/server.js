@@ -335,8 +335,14 @@ io.on('connection', (socket) => {
     });
 
     // If AI is active, respond
-    if (user.ai_active) {
-      const aiResponse = await getAIResponse(message);
+if (user.ai_active) {
+  // Get message count for this user
+  const messageCount = await db.get(
+    'SELECT COUNT(*) as count FROM messages WHERE user_id = ? AND sender_type = "user"',
+    [userId]
+  );
+  
+  const aiResponse = await getAIResponse(message, userId, messageCount.count);
       
       await db.run(
         'INSERT INTO messages (user_id, sender_type, message) VALUES (?, ?, ?)',
@@ -433,6 +439,7 @@ server.listen(PORT, '0.0.0.0', () => {
   console.log(`🚀 Server running on port ${PORT}`);
 
 });
+
 
 
 
