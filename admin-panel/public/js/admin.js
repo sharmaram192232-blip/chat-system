@@ -85,11 +85,29 @@ function displayUsers(users) {
         userDiv.className = 'user-item';
         userDiv.setAttribute('data-user-id', user.user_id);
         
+        // Format the user ID to show last 6 characters
+        const shortId = user.user_id ? user.user_id.slice(-6) : '------';
+        
         userDiv.innerHTML = `
             <div style="padding: 10px;">
-                <strong>${user.name || 'Visitor'}</strong>
-                <div style="font-size: 12px; color: #666;">
-                    ${user.status} | ${user.ai_active ? 'AI' : 'Agent'}
+                <div style="display: flex; justify-content: space-between; align-items: center;">
+                    <strong>${user.name || 'Visitor'}</strong>
+                    <span style="
+                        font-size: 10px; 
+                        color: #666; 
+                        background: #f0f0f0; 
+                        padding: 2px 6px; 
+                        border-radius: 10px;
+                        font-family: monospace;
+                    ">${shortId}</span>
+                </div>
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 4px;">
+                    <span style="font-size: 12px; color: #666;">
+                        ${user.status || 'New'} | ${user.ai_active ? 'AI' : 'Agent'}
+                    </span>
+                    <span style="font-size: 10px; color: #999;">
+                        ${user.last_active ? new Date(user.last_active).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : ''}
+                    </span>
                 </div>
             </div>
         `;
@@ -186,3 +204,4 @@ socket.on('user-online', () => {
 
 // Load users every 15 seconds
 setInterval(loadUsers, 15000);
+
