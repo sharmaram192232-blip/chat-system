@@ -496,4 +496,49 @@ body {
 
 ::-webkit-scrollbar-thumb:hover {
     background: #555;
+
 }
+
+    /* User list scrollbar */
+    .user-list {
+        overflow-y: auto !important;
+        max-height: calc(100vh - 120px) !important;
+        scrollbar-width: thin;
+        scrollbar-color: #888 #f1f1f1;
+    }
+    
+    .user-list::-webkit-scrollbar {
+        width: 6px;
+    }
+    
+    .user-list::-webkit-scrollbar-track {
+        background: #f1f1f1;
+        border-radius: 10px;
+    }
+    
+    .user-list::-webkit-scrollbar-thumb {
+        background: #888;
+        border-radius: 10px;
+    }
+    
+    .user-list::-webkit-scrollbar-thumb:hover {
+        background: #555;
+    }
+    
+    /* Ensure user list takes proper height */
+    .sidebar {
+        height: 100vh;
+        overflow: hidden;
+        display: flex;
+        flex-direction: column;
+    }
+    
+    .sidebar-header {
+        flex-shrink: 0;
+    }
+    
+    .user-list {
+        flex: 1;
+        overflow-y: auto;
+        min-height: 0;
+    }
