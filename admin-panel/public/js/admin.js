@@ -171,6 +171,11 @@ function sendMessage() {
     });
 }
 
+function displayMessage(data) {
+    console.log('RAW MESSAGE DATA:', data); // ADD THIS LINE
+    
+    // rest of your function...
+}
 // Display Message with proper formatting
 function displayMessage(data) {
     const messageDiv = document.createElement('div');
@@ -260,3 +265,4 @@ socket.on('user-online', () => {
 
 // Load users every 10 seconds
 setInterval(loadUsers, 10000);
+
