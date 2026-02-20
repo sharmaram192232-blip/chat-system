@@ -50,30 +50,41 @@ async function saveChatToFile(userId, messages) {
   }
 }
 
-// OpenRouter AI integration - SIMPLIFIED VERSION
+// OpenRouter AI integration - FIXED VERSION
 async function getAIResponse(message, userId, messageCount) {
   try {
-    // Check if this is the user's first message
-    const isFirstMessage = messageCount === 0;
+    console.log('Message count for user:', messageCount); // Debug line
     
+    // Get user's message history to check if this is truly first message
+    const userMessages = await db.all(
+      'SELECT message, sender_type FROM messages WHERE user_id = ? ORDER BY timestamp ASC',
+      [userId]
+    );
+    
+    // Count only user messages (not AI or agent)
+    const userMessageCount = userMessages.filter(m => m.sender_type === 'user').length;
+    
+    console.log('User message count:', userMessageCount);
+    
+    // Determine response based on user message count
     let systemPrompt = '';
     
-    if (isFirstMessage) {
-      // First message - ask for name and WhatsApp
+    if (userMessageCount <= 1) {
+      // First user message - ask for name and WhatsApp
       systemPrompt = `You are a customer service assistant for Mahadev Support.
       
-      RULE: When this is the user's FIRST message, ALWAYS respond with EXACTLY:
+      IMPORTANT: This is the user's FIRST message. You MUST respond with EXACTLY:
       "hello sir, before I proceed, I would like to know Your name and Whatsapp number"
       
-      DO NOT say anything else. DO NOT add any extra text. Use this exact message.`;
+      DO NOT say anything else. DO NOT add any extra text. Use this exact message only.`;
     } else {
-      // After user provides details - thank them
+      // Second or later message - thank them
       systemPrompt = `You are a customer service assistant for Mahadev Support.
       
-      RULE: When the user has already sent their first message (this is their second message), ALWAYS respond with EXACTLY:
+      IMPORTANT: The user has already sent their details. You MUST respond with EXACTLY:
       "Thanks for your cooperation sir, Our Agent will soon connect with you on Whatsapp."
       
-      DO NOT say anything else. DO NOT add any extra text. Use this exact message.`;
+      DO NOT say anything else. DO NOT add any extra text. Use this exact message only.`;
     }
     
     const response = await axios.post(
@@ -101,7 +112,7 @@ async function getAIResponse(message, userId, messageCount) {
     return response.data.choices[0].message.content;
   } catch (error) {
     console.error('AI Error:', error.message);
-    return "Thanks for your cooperation sir, Our Agent will soon connect with you on Whatsapp.";
+    return "hello sir, before I proceed, I would like to know Your name and Whatsapp number";
   }
 }
 // ============= USER API (NO REGISTRATION REQUIRED) =============
@@ -336,31 +347,36 @@ io.on('connection', (socket) => {
 
     // If AI is active, respond
 if (user.ai_active) {
-  // Get message count for this user
-  const messageCount = await db.get(
-    'SELECT COUNT(*) as count FROM messages WHERE user_id = ? AND sender_type = "user"',
-    [userId]
-  );
-  
-  const aiResponse = await getAIResponse(message, userId, messageCount.count);
-      
-      await db.run(
+    // Get ALL user messages to count properly
+    const userMessages = await db.all(
+        'SELECT * FROM messages WHERE user_id = ? AND sender_type = "user" ORDER BY timestamp ASC',
+        [userId]
+    );
+    
+    const userMessageCount = userMessages.length;
+    console.log('User message count for AI:', userMessageCount);
+    
+    const aiResponse = await getAIResponse(message, userId, userMessageCount);
+
+    await db.run(
         'INSERT INTO messages (user_id, sender_type, message) VALUES (?, ?, ?)',
         [userId, 'ai', aiResponse]
-      );
+    );
 
-      io.to(`user-${userId}`).emit('new-message', {
+    io.to(`user-${userId}`).emit('new-message', {
         message: aiResponse,
         senderType: 'ai',
         timestamp: new Date()
-      });
-
-      io.to('admin-room').emit('new-message', {
-        userId,
+    });
+    
+    io.to('admin-room').emit('new-message', {
+        userId: userId,
         message: aiResponse,
         senderType: 'ai',
-        timestamp: new Date()
-      });
+        timestamp: new Date(),
+        userName: user.name || 'Visitor'
+    });
+}
     }
   });
 
@@ -439,6 +455,7 @@ server.listen(PORT, '0.0.0.0', () => {
   console.log(`🚀 Server running on port ${PORT}`);
 
 });
+
 
 
 
