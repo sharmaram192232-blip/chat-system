@@ -1,4 +1,4 @@
-// Admin Panel - SIMPLE WORKING VERSION
+// Admin Panel JavaScript - STABLE WORKING VERSION WITH ALL FEATURES
 const socket = io('https://chat-system-mryx.onrender.com');
 let currentAgent = null;
 let currentUser = null;
@@ -17,34 +17,38 @@ const sendButton = document.getElementById('sendButton');
 const agentInfo = document.getElementById('agentInfo');
 const logoutBtn = document.getElementById('logoutBtn');
 
-// Login
+// Login Form Submit
 loginForm.addEventListener('submit', async (e) => {
     e.preventDefault();
     
     const username = document.getElementById('username').value;
     const password = document.getElementById('password').value;
     
-    const response = await fetch('https://chat-system-mryx.onrender.com/api/agent/login', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ username, password })
-    });
-    
-    const data = await response.json();
-    
-    if (data.success) {
-        token = data.token;
-        currentAgent = data.agent;
+    try {
+        const response = await fetch('https://chat-system-mryx.onrender.com/api/agent/login', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ username, password })
+        });
         
-        loginContainer.style.display = 'none';
-        adminPanel.style.display = 'flex';
-        logoutBtn.style.display = 'block';
-        agentInfo.textContent = `Logged in as: ${data.agent.name}`;
+        const data = await response.json();
         
-        socket.emit('admin-connect', { token });
-        loadUsers();
-    } else {
-        alert('Login failed');
+        if (data.success) {
+            token = data.token;
+            currentAgent = data.agent;
+            
+            loginContainer.style.display = 'none';
+            adminPanel.style.display = 'flex';
+            logoutBtn.style.display = 'block';
+            agentInfo.textContent = `Logged in as: ${data.agent.name}`;
+            
+            socket.emit('admin-connect', { token });
+            loadUsers();
+        } else {
+            alert('Login failed: ' + data.error);
+        }
+    } catch (error) {
+        alert('Login error. Please try again.');
     }
 });
 
@@ -60,107 +64,199 @@ logoutBtn.addEventListener('click', () => {
 
 // Load Users
 async function loadUsers() {
-    const response = await fetch('https://chat-system-mryx.onrender.com/api/admin/users');
-    const data = await response.json();
-    if (data.success) displayUsers(data.users);
+    try {
+        const response = await fetch('https://chat-system-mryx.onrender.com/api/admin/users');
+        const data = await response.json();
+        
+        if (data.success) {
+            displayUsers(data.users);
+        }
+    } catch (error) {
+        console.error('Failed to load users:', error);
+    }
 }
 
-// Display Users
+// Display Users in Sidebar with IDs and timestamps
 function displayUsers(users) {
     userList.innerHTML = '';
+    
     users.forEach(user => {
-        const div = document.createElement('div');
-        div.className = 'user-item';
-        div.onclick = () => selectUser(user);
-        div.innerHTML = `<strong>${user.name || 'Visitor'}</strong><br><small>${user.status} | ${user.ai_active ? 'AI' : 'Agent'}</small>`;
-        userList.appendChild(div);
+        const userDiv = document.createElement('div');
+        userDiv.className = 'user-item';
+        userDiv.setAttribute('data-user-id', user.user_id);
+        
+        // Format user ID to show last 6 characters
+        const shortId = user.user_id ? user.user_id.slice(-6) : '------';
+        
+        // Format last active time
+        let lastActiveTime = '';
+        if (user.last_active) {
+            const date = new Date(user.last_active);
+            lastActiveTime = date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+        }
+        
+        userDiv.innerHTML = `
+            <div style="padding: 10px;">
+                <div style="display: flex; justify-content: space-between; align-items: center;">
+                    <strong>${user.name || 'Visitor'}</strong>
+                    <span style="
+                        font-size: 10px; 
+                        color: #666; 
+                        background: #f0f0f0; 
+                        padding: 2px 6px; 
+                        border-radius: 10px;
+                        font-family: monospace;
+                    ">${shortId}</span>
+                </div>
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 4px;">
+                    <span style="font-size: 12px; color: #666;">
+                        ${user.status || 'New'} | ${user.ai_active ? 'AI' : 'Agent'}
+                    </span>
+                    <span style="font-size: 10px; color: #999;">
+                        ${lastActiveTime}
+                    </span>
+                </div>
+            </div>
+        `;
+        
+        userDiv.addEventListener('click', () => selectUser(user));
+        userList.appendChild(userDiv);
     });
 }
 
-// Select User
+// Select User to Chat
 async function selectUser(user) {
     currentUser = user;
+    
+    document.querySelectorAll('.user-item').forEach(el => el.classList.remove('active'));
+    event.currentTarget.classList.add('active');
+    
     chatHeader.innerHTML = `<h3>Chat with ${user.name || 'Visitor'}</h3>`;
     chatInputArea.style.display = 'flex';
+    messageInput.focus();
     
-    const response = await fetch(`https://chat-system-mryx.onrender.com/api/admin/user/${user.user_id}`);
-    const data = await response.json();
-    if (data.success) {
-        messagesContainer.innerHTML = '';
-        data.messages.forEach(msg => displayMessage(msg));
+    try {
+        const response = await fetch(`https://chat-system-mryx.onrender.com/api/admin/user/${user.user_id}`);
+        const data = await response.json();
+        
+        if (data.success) {
+            messagesContainer.innerHTML = '';
+            data.messages.forEach(msg => displayMessage(msg));
+        }
+    } catch (error) {
+        console.error('Failed to load messages:', error);
     }
 }
 
 // Send Message
-sendButton.onclick = sendMessage;
-messageInput.onkeypress = (e) => { if (e.key === 'Enter') sendMessage(); };
+sendButton.addEventListener('click', sendMessage);
+messageInput.addEventListener('keypress', (e) => {
+    if (e.key === 'Enter') {
+        sendMessage();
+    }
+});
 
 function sendMessage() {
-    const msg = messageInput.value.trim();
-    if (!msg || !currentUser || !currentAgent) return;
+    const message = messageInput.value.trim();
+    if (!message || !currentUser || !currentAgent) return;
+    
     messageInput.value = '';
+    
+    // Send to server
     socket.emit('agent-message', {
         userId: currentUser.user_id,
-        message: msg,
+        message,
         agentName: currentAgent.name,
         agentId: currentAgent.id
     });
 }
 
-// Display Message
+// Display Message with proper formatting
 function displayMessage(data) {
-    const wrapper = document.createElement('div');
-    wrapper.style.margin = '10px 0';
-    wrapper.style.textAlign = data.senderType === 'agent' ? 'right' : 'left';
+    const messageDiv = document.createElement('div');
+    messageDiv.style.marginBottom = '12px';
+    messageDiv.style.clear = 'both';
     
-    const bubble = document.createElement('div');
-    bubble.style.display = 'inline-block';
-    bubble.style.maxWidth = '70%';
-    bubble.style.padding = '8px 12px';
-    bubble.style.borderRadius = '15px';
-    bubble.style.backgroundColor = 
-        data.senderType === 'agent' ? '#dcf8c6' :
-        data.senderType === 'user' ? 'white' : '#e3f2fd';
-    if (data.senderType === 'user') bubble.style.border = '1px solid #ddd';
+    // Set alignment based on sender
+    if (data.senderType === 'agent') {
+        messageDiv.style.textAlign = 'right';
+    } else {
+        messageDiv.style.textAlign = 'left';
+    }
     
-    const name = document.createElement('div');
-    name.style.fontWeight = 'bold';
-    name.style.fontSize = '12px';
-    name.style.marginBottom = '4px';
-    name.style.color = 
-        data.senderType === 'agent' ? '#075e54' :
-        data.senderType === 'user' ? '#128c7e' : '#1565c0';
-    name.textContent = 
-        data.senderType === 'agent' ? (data.agentName || 'Agent') :
-        data.senderType === 'user' ? 'User' : 'AI Assistant';
+    const bubbleDiv = document.createElement('div');
+    bubbleDiv.style.display = 'inline-block';
+    bubbleDiv.style.maxWidth = '70%';
+    bubbleDiv.style.padding = '8px 12px';
+    bubbleDiv.style.borderRadius = '15px';
+    bubbleDiv.style.wordWrap = 'break-word';
     
-    const text = document.createElement('div');
-    text.style.fontSize = '14px';
-    text.textContent = data.message;
+    // Set colors based on sender
+    if (data.senderType === 'agent') {
+        bubbleDiv.style.backgroundColor = '#dcf8c6'; // Light green for agent
+        bubbleDiv.style.borderBottomRightRadius = '4px';
+    } else if (data.senderType === 'user') {
+        bubbleDiv.style.backgroundColor = '#ffffff'; // White for user
+        bubbleDiv.style.border = '1px solid #e0e0e0';
+        bubbleDiv.style.borderBottomLeftRadius = '4px';
+    } else if (data.senderType === 'ai') {
+        bubbleDiv.style.backgroundColor = '#e3f2fd'; // Light blue for AI
+        bubbleDiv.style.borderBottomLeftRadius = '4px';
+    }
     
-    const time = document.createElement('div');
-    time.style.fontSize = '10px';
-    time.style.color = '#999';
-    time.style.textAlign = 'right';
-    time.style.marginTop = '4px';
-    time.textContent = data.timestamp ? 
-        new Date(data.timestamp).toLocaleTimeString().slice(0,5) : 
-        new Date().toLocaleTimeString().slice(0,5);
+    // Format timestamp
+    let timeString = '';
+    if (data.timestamp) {
+        const date = new Date(data.timestamp);
+        timeString = date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    } else {
+        timeString = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    }
     
-    bubble.appendChild(name);
-    bubble.appendChild(text);
-    bubble.appendChild(time);
-    wrapper.appendChild(bubble);
-    messagesContainer.appendChild(wrapper);
+    // Set sender name
+    let senderDisplay = '';
+    if (data.senderType === 'agent' && data.agentName) {
+        senderDisplay = data.agentName;
+    } else if (data.senderType === 'user') {
+        senderDisplay = 'User';
+    } else if (data.senderType === 'ai') {
+        senderDisplay = 'AI Assistant';
+    }
+    
+    // Build bubble content
+    bubbleDiv.innerHTML = `
+        <div style="font-weight: bold; font-size: 12px; margin-bottom: 4px; color: #075e54;">
+            ${senderDisplay}
+        </div>
+        <div style="font-size: 14px;">${data.message}</div>
+        <div style="font-size: 10px; color: #999; text-align: right; margin-top: 4px;">
+            ${timeString}
+        </div>
+    `;
+    
+    messageDiv.appendChild(bubbleDiv);
+    messagesContainer.appendChild(messageDiv);
     messagesContainer.scrollTop = messagesContainer.scrollHeight;
 }
 
-// Socket events
+// Socket Events
+socket.on('connect', () => {
+    console.log('Connected to server');
+    if (token) {
+        socket.emit('admin-connect', { token });
+    }
+});
+
 socket.on('new-message', (data) => {
-    if (currentUser && data.userId === currentUser.user_id) displayMessage(data);
+    if (currentUser && data.userId === currentUser.user_id) {
+        displayMessage(data);
+    }
     loadUsers();
 });
 
-socket.on('user-online', () => loadUsers());
+socket.on('user-online', () => {
+    loadUsers();
+});
 
+// Load users every 10 seconds
 setInterval(loadUsers, 10000);
