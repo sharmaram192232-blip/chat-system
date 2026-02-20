@@ -1,8 +1,9 @@
-// Admin Panel JavaScript - STABLE WORKING VERSION
+// Admin Panel JavaScript - COMPLETELY FIXED VERSION
 const socket = io('https://chat-system-mryx.onrender.com');
 let currentAgent = null;
 let currentUser = null;
 let token = null;
+let messageIds = new Set(); // Track message IDs to prevent duplicates
 
 // DOM Elements
 const loginContainer = document.getElementById('loginContainer');
@@ -60,6 +61,7 @@ logoutBtn.addEventListener('click', () => {
     loginContainer.style.display = 'flex';
     adminPanel.style.display = 'none';
     logoutBtn.style.display = 'none';
+    messageIds.clear(); // Clear message cache on logout
 });
 
 // Load Users
@@ -126,13 +128,22 @@ async function selectUser(user) {
     
     chatHeader.innerHTML = `<h3>Chat with ${user.name || 'Visitor'}</h3>`;
     chatInputArea.style.display = 'flex';
+    messageInput.focus();
+    
+    // Clear message cache when switching users
+    messageIds.clear();
     
     const response = await fetch(`https://chat-system-mryx.onrender.com/api/admin/user/${user.user_id}`);
     const data = await response.json();
     
     if (data.success) {
         messagesContainer.innerHTML = '';
-        data.messages.forEach(msg => displayMessage(msg));
+        data.messages.forEach(msg => {
+            // Generate unique ID for message if not present
+            const msgId = msg.id || `${msg.timestamp}-${msg.message.substring(0,10)}`;
+            messageIds.add(msgId);
+            displayMessage(msg);
+        });
     }
 }
 
@@ -150,6 +161,10 @@ function sendMessage() {
     
     messageInput.value = '';
     
+    // Create temporary ID for this message to prevent duplicate display
+    const tempId = `temp-${Date.now()}`;
+    messageIds.add(tempId);
+    
     socket.emit('agent-message', {
         userId: currentUser.user_id,
         message,
@@ -157,7 +172,9 @@ function sendMessage() {
         agentId: currentAgent.id
     });
     
+    // Display locally with temp ID
     displayMessage({
+        id: tempId,
         message,
         senderType: 'agent',
         agentName: currentAgent.name,
@@ -165,22 +182,54 @@ function sendMessage() {
     });
 }
 
-// ===== UPDATED DISPLAY MESSAGE FUNCTION =====
-// Display Message with proper bubbles and labels for ALL senders
+// ===== COMPLETELY REWRITTEN DISPLAY FUNCTION =====
 function displayMessage(data) {
-    console.log('Displaying message:', data); // Debug line
+    console.log('Display message called with:', data);
+    
+    // Prevent duplicates using message ID
+    const msgId = data.id || data._id || `${data.timestamp}-${data.message}`;
+    if (messageIds.has(msgId)) {
+        console.log('Duplicate message prevented:', msgId);
+        return;
+    }
+    messageIds.add(msgId);
     
     const messageDiv = document.createElement('div');
     messageDiv.style.marginBottom = '15px';
     messageDiv.style.clear = 'both';
     messageDiv.style.display = 'flex';
+    messageDiv.style.width = '100%';
     
-    // Position based on sender type
-    if (data.senderType === 'agent') {
-        messageDiv.style.justifyContent = 'flex-end'; // Agent on RIGHT
+    // Determine sender type
+    let senderType = data.senderType || data.sender_type || 'unknown';
+    let senderName = '';
+    let bubbleColor = '';
+    let textColor = '#333';
+    let alignment = 'flex-start';
+    
+    // Configure based on sender type
+    if (senderType === 'agent') {
+        senderName = data.agentName || 'Agent';
+        bubbleColor = '#dcf8c6'; // Light green
+        alignment = 'flex-end';
+    } else if (senderType === 'user') {
+        senderName = 'User';
+        bubbleColor = '#ffffff'; // White
+        textColor = '#000000';
+        alignment = 'flex-start';
+    } else if (senderType === 'ai') {
+        senderName = 'AI Assistant';
+        bubbleColor = '#e3f2fd'; // Light blue
+        textColor = '#1565c0';
+        alignment = 'flex-start';
     } else {
-        messageDiv.style.justifyContent = 'flex-start'; // User/AI on LEFT
+        // Fallback for unknown
+        senderName = senderType.charAt(0).toUpperCase() + senderType.slice(1);
+        bubbleColor = '#f0f0f0';
+        alignment = 'flex-start';
     }
+    
+    messageDiv.style.justifyContent = alignment;
     
     const bubbleDiv = document.createElement('div');
     bubbleDiv.style.maxWidth = '70%';
@@ -188,49 +237,35 @@ function displayMessage(data) {
     bubbleDiv.style.borderRadius = '18px';
     bubbleDiv.style.wordWrap = 'break-word';
     bubbleDiv.style.boxShadow = '0 1px 2px rgba(0,0,0,0.1)';
+    bubbleDiv.style.backgroundColor = bubbleColor;
     
-    // Different colors for different sender types
-    if (data.senderType === 'agent') {
-        bubbleDiv.style.backgroundColor = '#dcf8c6'; // Light green
-        bubbleDiv.style.borderBottomRightRadius = '4px';
-    } else if (data.senderType === 'user') {
-        bubbleDiv.style.backgroundColor = '#ffffff'; // White
+    // Add border for user messages
+    if (senderType === 'user') {
         bubbleDiv.style.border = '1px solid #e0e0e0';
-        bubbleDiv.style.borderBottomLeftRadius = '4px';
-    } else if (data.senderType === 'ai') {
-        bubbleDiv.style.backgroundColor = '#e3f2fd'; // Light blue
+    }
+    
+    // Adjust border radius based on alignment
+    if (alignment === 'flex-end') {
+        bubbleDiv.style.borderBottomRightRadius = '4px';
+    } else {
         bubbleDiv.style.borderBottomLeftRadius = '4px';
     }
     
     // Format time
-    const time = data.timestamp ? new Date(data.timestamp).toLocaleTimeString([], { 
-        hour: '2-digit', 
-        minute: '2-digit' 
-    }) : new Date().toLocaleTimeString([], { 
-        hour: '2-digit', 
-        minute: '2-digit' 
-    });
-    
-    // Set sender label based on type (ENSURES ALL MESSAGES HAVE LABELS)
-    let senderLabel = '';
-    let senderColor = '';
-    
-    if (data.senderType === 'agent' && data.agentName) {
-        senderLabel = data.agentName;
-        senderColor = '#075e54';
-    } else if (data.senderType === 'user') {
-        senderLabel = 'User';
-        senderColor = '#128c7e';
-    } else if (data.senderType === 'ai') {
-        senderLabel = 'AI Assistant';
-        senderColor = '#1565c0';
-    } else {
-        // Fallback for any unknown type
-        senderLabel = data.senderType || 'Unknown';
-        senderColor = '#999';
+    let timeStr = '';
+    try {
+        timeStr = data.timestamp ? new Date(data.timestamp).toLocaleTimeString([], { 
+            hour: '2-digit', 
+            minute: '2-digit' 
+        }) : new Date().toLocaleTimeString([], { 
+            hour: '2-digit', 
+            minute: '2-digit' 
+        });
+    } catch (e) {
+        timeStr = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
     }
     
-    // Escape message to prevent XSS
+    // Escape message content
     const escapeHtml = (text) => {
         if (!text) return '';
         const div = document.createElement('div');
@@ -238,30 +273,22 @@ function displayMessage(data) {
         return div.innerHTML;
     };
     
-    // Build the bubble content with sender label ALWAYS shown
+    // Build bubble content
     bubbleDiv.innerHTML = `
-        <div style="font-weight: 600; font-size: 12px; color: ${senderColor}; margin-bottom: 4px;">
-            ${senderLabel}
+        <div style="font-weight: 600; font-size: 12px; color: #075e54; margin-bottom: 4px;">
+            ${escapeHtml(senderName)}
         </div>
-        <div style="font-size: 14px; line-height: 1.4;">
+        <div style="font-size: 14px; line-height: 1.4; color: ${textColor};">
             ${escapeHtml(data.message)}
         </div>
         <div style="font-size: 10px; color: #999; text-align: right; margin-top: 4px;">
-            ${time}
+            ${escapeHtml(timeStr)}
         </div>
     `;
     
     messageDiv.appendChild(bubbleDiv);
     messagesContainer.appendChild(messageDiv);
     messagesContainer.scrollTop = messagesContainer.scrollHeight;
-}
-
-// Helper function to escape HTML (kept for backward compatibility)
-function escapeHtml(text) {
-    if (!text) return '';
-    const div = document.createElement('div');
-    div.textContent = text;
-    return div.innerHTML;
 }
 
 // Socket Events
@@ -273,7 +300,9 @@ socket.on('connect', () => {
 });
 
 socket.on('new-message', (data) => {
-    console.log('New message received:', data); // Debug line
+    console.log('New message from socket:', data);
+    
+    // Only display if it's for current user
     if (currentUser && data.userId === currentUser.user_id) {
         displayMessage(data);
     }
@@ -284,5 +313,20 @@ socket.on('user-online', () => {
     loadUsers();
 });
 
-// Load users every 15 seconds
-setInterval(loadUsers, 15000);
+socket.on('disconnect', () => {
+    console.log('Disconnected from server');
+});
+
+// Load users every 10 seconds
+setInterval(loadUsers, 10000);
+
+// Clear message cache periodically (every 5 minutes)
+setInterval(() => {
+    if (messagesContainer.children.length > 0) {
+        // Keep only last 100 message IDs in cache
+        const ids = Array.from(messageIds);
+        if (ids.length > 100) {
+            messageIds = new Set(ids.slice(-100));
+        }
+    }
+}, 300000);
