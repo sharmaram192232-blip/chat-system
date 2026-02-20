@@ -50,18 +50,18 @@ async function saveChatToFile(userId, messages) {
   }
 }
 
-// OpenRouter AI integration - FIXED VERSION
+// OpenRouter AI integration - SIMPLIFIED VERSION
 async function getAIResponse(message, userId, messageCount) {
   try {
-    console.log('Message count for user:', messageCount); // Debug line
+    console.log('Message count for user:', messageCount);
     
-    // Get user's message history to check if this is truly first message
+    // Get user's message history
     const userMessages = await db.all(
       'SELECT message, sender_type FROM messages WHERE user_id = ? ORDER BY timestamp ASC',
       [userId]
     );
     
-    // Count only user messages (not AI or agent)
+    // Count only user messages
     const userMessageCount = userMessages.filter(m => m.sender_type === 'user').length;
     
     console.log('User message count:', userMessageCount);
@@ -115,7 +115,8 @@ async function getAIResponse(message, userId, messageCount) {
     return "hello sir, before I proceed, I would like to know Your name and Whatsapp number";
   }
 }
-// ============= USER API (NO REGISTRATION REQUIRED) =============
+
+// ============= USER API =============
 
 // Create or get user
 app.post('/api/user/init', async (req, res) => {
@@ -129,8 +130,8 @@ app.post('/api/user/init', async (req, res) => {
       [userId, pageUrl]
     );
 
-    // Send welcome message from AI
-    const welcomeMessage = "👋 Hi there! Welcome to our support. How can I help you today?";
+    // Send welcome message from AI - ASKS FOR NAME AND NUMBER IMMEDIATELY
+    const welcomeMessage = "hello sir, before I proceed, I would like to know Your name and Whatsapp number";
     await db.run(
       'INSERT INTO messages (user_id, sender_type, message) VALUES (?, ?, ?)',
       [userId, 'ai', welcomeMessage]
@@ -314,7 +315,6 @@ io.on('connection', (socket) => {
       
       console.log(`👨‍💼 Agent connected: ${decoded.name}`);
       
-      // Notify all admins of agent status
       io.to('admin-room').emit('agent-status-change', {
         agentId: decoded.id,
         name: decoded.name,
@@ -346,37 +346,36 @@ io.on('connection', (socket) => {
     });
 
     // If AI is active, respond
-if (user.ai_active) {
-    // Get ALL user messages to count properly
-    const userMessages = await db.all(
+    if (user.ai_active) {
+      // Get ALL user messages to count properly
+      const userMessages = await db.all(
         'SELECT * FROM messages WHERE user_id = ? AND sender_type = "user" ORDER BY timestamp ASC',
         [userId]
-    );
-    
-    const userMessageCount = userMessages.length;
-    console.log('User message count for AI:', userMessageCount);
-    
-    const aiResponse = await getAIResponse(message, userId, userMessageCount);
+      );
+      
+      const userMessageCount = userMessages.length;
+      console.log('User message count for AI:', userMessageCount);
+      
+      const aiResponse = await getAIResponse(message, userId, userMessageCount);
 
-    await db.run(
+      await db.run(
         'INSERT INTO messages (user_id, sender_type, message) VALUES (?, ?, ?)',
         [userId, 'ai', aiResponse]
-    );
+      );
 
-    io.to(`user-${userId}`).emit('new-message', {
+      io.to(`user-${userId}`).emit('new-message', {
         message: aiResponse,
         senderType: 'ai',
         timestamp: new Date()
-    });
-    
-    io.to('admin-room').emit('new-message', {
+      });
+      
+      io.to('admin-room').emit('new-message', {
         userId: userId,
         message: aiResponse,
         senderType: 'ai',
         timestamp: new Date(),
         userName: user.name || 'Visitor'
-    });
-}
+      });
     }
   });
 
@@ -453,10 +452,4 @@ if (user.ai_active) {
 const PORT = process.env.PORT || 3000;
 server.listen(PORT, '0.0.0.0', () => {
   console.log(`🚀 Server running on port ${PORT}`);
-
 });
-
-
-
-
-
