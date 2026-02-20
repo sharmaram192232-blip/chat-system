@@ -5,7 +5,7 @@ let currentUser = null;
 let token = null;
 let allUsers = [];
 let filteredUsers = [];
-let userCounter = 1; // For generating User001, User002, etc.
+let messagesCache = {}; // Cache messages per user
 
 // DOM Elements
 const loginPage = document.getElementById('login-page');
@@ -96,6 +96,7 @@ logoutBtn.addEventListener('click', () => {
     token = null;
     currentAgent = null;
     currentUser = null;
+    messagesCache = {};
     loginPage.style.display = 'flex';
     dashboardPage.style.display = 'none';
 });
@@ -107,9 +108,9 @@ async function loadUsers() {
         const data = await response.json();
         
         if (data.success) {
-            // Assign user numbers based on creation date
+            // Sort users by creation date and assign sequential names
             const sortedUsers = data.users.sort((a, b) => 
-                new Date(a.created_at) - new Date(b.created_at)
+                new Date(a.created_at || a.first_seen || 0) - new Date(b.created_at || b.first_seen || 0)
             );
             
             sortedUsers.forEach((user, index) => {
@@ -131,25 +132,19 @@ function applyFilters() {
     const activeFilter = document.querySelector('.filter-tab.active')?.dataset.filter || 'all';
     
     filteredUsers = allUsers.filter(user => {
-        // Search filter
         const matchesSearch = (user.displayName || '').toLowerCase().includes(searchTerm) ||
                              user.user_id?.toLowerCase().includes(searchTerm) ||
                              (user.name || '').toLowerCase().includes(searchTerm);
         
         if (!matchesSearch) return false;
         
-        // Tab filter
-        if (activeFilter === 'online') {
-            const lastActive = new Date(user.last_active);
-            const fiveMinAgo = new Date(Date.now() - 5 * 60 * 1000);
-            return lastActive > fiveMinAgo;
-        }
-        if (activeFilter === 'unread') {
-            return user.unread_count > 0;
-        }
-        if (activeFilter === 'new') {
-            return user.status === 'New';
-        }
+        const lastActive = new Date(user.last_active);
+        const fiveMinAgo = new Date(Date.now() - 5 * 60 * 1000);
+        const isOnline = lastActive > fiveMinAgo;
+        
+        if (activeFilter === 'online') return isOnline;
+        if (activeFilter === 'unread') return user.unread_count > 0;
+        if (activeFilter === 'new') return user.status === 'New';
         return true;
     });
     
@@ -163,11 +158,12 @@ function displayUsers(users) {
     users.forEach(user => {
         const lastActive = new Date(user.last_active);
         const now = new Date();
-        const diffMin = Math.floor((now - lastActive) / (1000 * 60));
+        const diffMs = now - lastActive;
+        const diffMin = Math.floor(diffMs / (1000 * 60));
         const isOnline = diffMin < 5;
-        const initials = (user.displayName || 'U').charAt(0).toUpperCase();
+        const initials = (user.displayName || 'U').replace('User', '').padStart(2, '0');
         
-        // Format time ago properly
+        // Calculate accurate time ago
         let timeAgo = '';
         if (diffMin < 1) timeAgo = 'just now';
         else if (diffMin < 60) timeAgo = `${diffMin}m ago`;
@@ -219,14 +215,23 @@ async function selectUser(user) {
     chatInputArea.style.display = 'block';
     if (emptyState) emptyState.style.display = 'none';
     
-    // Load messages
+    // Clear and reload messages
+    messagesContainer.innerHTML = '';
+    
+    // Check cache first
+    if (messagesCache[user.user_id]) {
+        messagesCache[user.user_id].forEach(msg => displayMessage(msg, true));
+    }
+    
+    // Load fresh messages from server
     try {
         const response = await fetch(`https://chat-system-mryx.onrender.com/api/admin/user/${user.user_id}`);
         const data = await response.json();
         
         if (data.success) {
+            messagesCache[user.user_id] = data.messages;
             messagesContainer.innerHTML = '';
-            data.messages.forEach(msg => displayMessage(msg));
+            data.messages.forEach(msg => displayMessage(msg, true));
         }
     } catch (error) {
         console.error('Failed to load messages:', error);
@@ -234,49 +239,63 @@ async function selectUser(user) {
 }
 
 // ============= DISPLAY MESSAGE =============
-function displayMessage(data) {
+function displayMessage(data, isHistorical = false) {
     const messageDiv = document.createElement('div');
     messageDiv.className = `message ${data.senderType === 'agent' ? 'sent' : 'received'}`;
     
-    // Format time properly
+    // Format time properly based on timestamp
     let timeString = '';
     if (data.timestamp) {
         const date = new Date(data.timestamp);
         const now = new Date();
-        const diffMin = Math.floor((now - date) / (1000 * 60));
+        const diffMs = now - date;
+        const diffMin = Math.floor(diffMs / (1000 * 60));
+        const diffHours = Math.floor(diffMs / (1000 * 60 * 60));
+        const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
         
+        // Show different format based on age
         if (diffMin < 1) timeString = 'just now';
         else if (diffMin < 60) timeString = `${diffMin}m ago`;
-        else timeString = date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+        else if (diffHours < 24) timeString = `${diffHours}h ago`;
+        else if (diffDays < 7) timeString = `${diffDays}d ago`;
+        else timeString = date.toLocaleDateString();
     } else {
         timeString = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
     }
     
-    // Set sender name and icon based on type
+    // Set sender name and styling based on type
     let senderName = '';
     let senderIcon = '';
+    let bubbleClass = '';
     
     if (data.senderType === 'agent' && data.agentName) {
         senderName = data.agentName;
         senderIcon = '👤';
+        bubbleClass = 'agent-bubble';
     } else if (data.senderType === 'user') {
         senderName = currentUser?.displayName || 'User';
         senderIcon = '👤';
+        bubbleClass = 'user-bubble';
     } else if (data.senderType === 'ai') {
         senderName = 'AI Assistant';
         senderIcon = '🤖';
+        bubbleClass = 'ai-bubble';
     }
     
     messageDiv.innerHTML = `
-        <div class="message-bubble">
+        <div class="message-bubble ${bubbleClass}">
             <div class="sender-name">${senderIcon} ${senderName}</div>
-            <div>${escapeHtml(data.message)}</div>
+            <div class="message-text">${escapeHtml(data.message)}</div>
             <div class="message-info">${timeString}</div>
         </div>
     `;
     
     messagesContainer.appendChild(messageDiv);
-    messagesContainer.scrollTop = messagesContainer.scrollHeight;
+    
+    // Only scroll to bottom for new messages, not historical
+    if (!isHistorical) {
+        messagesContainer.scrollTop = messagesContainer.scrollHeight;
+    }
 }
 
 // ============= SEND MESSAGE =============
@@ -311,6 +330,11 @@ socket.on('connect', () => {
 socket.on('new-message', (data) => {
     console.log('New message received:', data);
     
+    // Update cache
+    if (messagesCache[data.userId]) {
+        messagesCache[data.userId].push(data);
+    }
+    
     // Play sound and show notification for user messages
     if (data.senderType === 'user') {
         notificationSound.play().catch(e => console.log('Audio error:', e));
@@ -329,9 +353,12 @@ socket.on('new-message', (data) => {
         }, 5000);
     }
     
+    // Display if it's for current user
     if (currentUser && data.userId === currentUser.user_id) {
-        displayMessage(data);
+        displayMessage(data, false);
     }
+    
+    // Refresh user list
     loadUsers();
 });
 
@@ -448,7 +475,4 @@ function escapeHtml(text) {
     const div = document.createElement('div');
     div.textContent = text;
     return div.innerHTML;
-}
-
-// ============= ADD NOTES API ENDPOINT TO BACKEND =============
-// Note: You'll need to add this to your server.js later
+}s
